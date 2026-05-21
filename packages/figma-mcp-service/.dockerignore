@@ -1,0 +1,7 @@
+node_modules
+dist
+.playwright-state
+.env
+.env.*
+*.log
+coverage

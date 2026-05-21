@@ -1,0 +1,22 @@
+{
+  "name": "figma-mcp-poc-client",
+  "image": "mcr.microsoft.com/devcontainers/typescript-node:20",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "github.copilot",
+        "github.copilot-chat"
+      ]
+    }
+  },
+  "secrets": {
+    "FIGMA_MCP_TOKEN": {
+      "description": "Bearer token (fmps_xxx) issued by `pnpm issue-api-key` — used to call the remote figma-mcp service. This is the only credential needed in Codespaces.",
+      "documentationUrl": "https://github.com/your-org/figma-mcp-poc#phase-7"
+    }
+  },
+  "remoteEnv": {
+    "FIGMA_MCP_TOKEN": "${localEnv:FIGMA_MCP_TOKEN}"
+  },
+  "postCreateCommand": "echo 'figma-mcp-poc client container ready. Open Copilot Chat (Agent) and paste a Figma URL.'"
+}

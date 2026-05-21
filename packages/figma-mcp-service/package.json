@@ -1,0 +1,28 @@
+{
+  "name": "figma-mcp-service",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/server.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsx watch src/server.ts",
+    "start": "node dist/server.js",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@figma-mcp-poc/shared": "workspace:*",
+    "@hono/node-server": "^1.13.0",
+    "@modelcontextprotocol/sdk": "^1.0.4",
+    "@supabase/supabase-js": "^2.45.0",
+    "hono": "^4.6.0",
+    "p-limit": "^6.1.0",
+    "playwright": "^1.49.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.7.0",
+    "typescript": "^5.4.0",
+    "vitest": "^2.1.0"
+  }
+}

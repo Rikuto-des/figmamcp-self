@@ -1,0 +1,7 @@
+node_modules
+dist
+build
+coverage
+.playwright-state
+*.lock
+pnpm-lock.yaml

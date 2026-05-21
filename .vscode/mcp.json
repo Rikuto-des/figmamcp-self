@@ -1,0 +1,20 @@
+{
+  "$schema": "https://aka.ms/vscode-mcp-schema",
+  "inputs": [
+    {
+      "id": "figma-mcp-token",
+      "type": "promptString",
+      "description": "Figma MCP Token (fmps_...)",
+      "password": true
+    }
+  ],
+  "servers": {
+    "figma-internal": {
+      "type": "http",
+      "url": "http://localhost:3000/mcp",
+      "headers": {
+        "Authorization": "Bearer ${input:figma-mcp-token}"
+      }
+    }
+  }
+}

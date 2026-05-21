@@ -1,0 +1,38 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+build/
+*.tsbuildinfo
+
+# Environment / secrets
+.env
+.env.local
+.env.*.local
+
+# Playwright session (Figma login state — contains auth cookies)
+.playwright-state/
+
+# Local MCP server token cache
+.config/figma-mcp-poc/
+
+# Logs
+*.log
+logs/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/mcp.json
+!.vscode/settings.json
+!.vscode/extensions.json
+
+# Coverage
+coverage/
+*.lcov
+
+# Misc
+.cache/
+.tmp/
