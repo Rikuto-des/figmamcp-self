@@ -53,6 +53,19 @@ export async function createSignedUrl(path: string, ttlSec?: number): Promise<{ 
   };
 }
 
+/**
+ * Download bytes directly via service_role — no signed URL is ever created.
+ * Governance: the bytes never traverse a presigned URL path, so there's no
+ * URL artifact that could leak (in memory only, server-internal).
+ */
+export async function downloadAsset(path: string): Promise<Buffer> {
+  const { data, error } = await supabaseAdmin()
+    .storage.from(env().STORAGE_BUCKET)
+    .download(path);
+  if (error || !data) throw new Error(`storage download failed: ${error?.message ?? 'no data'}`);
+  return Buffer.from(await data.arrayBuffer());
+}
+
 export interface FindCachedOpts {
   cacheKey: string;
   userId: string;

@@ -36,25 +36,16 @@ export function registerGetScreenshot(server: McpServer, ctx: { userId: string }
           scale: args.scale,
         });
 
-        // Fetch the bytes via the signed URL we just minted. We're in the same
-        // process as Supabase Storage so we could also stream bytes directly,
-        // but the signed URL path keeps the audit trail clean.
-        const res = await fetch(render.signed_url);
-        if (!res.ok) {
-          return {
-            isError: true,
-            content: [{ type: 'text', text: `signed_url fetch failed: ${res.status}` }],
-          };
-        }
-        const buf = Buffer.from(await res.arrayBuffer());
-        const base64 = buf.toString('base64');
+        // No signed URL involved: bytes flow Buffer → base64 in-process.
+        // Governance: no transient public URL is ever created for these bytes.
+        const base64 = render.bytes.toString('base64');
 
         return {
           content: [
             {
               type: 'image',
               data: base64,
-              mimeType: render.format === 'jpg' ? 'image/jpeg' : 'image/png',
+              mimeType: render.mime_type,
             },
             {
               type: 'text',
@@ -66,9 +57,7 @@ export function registerGetScreenshot(server: McpServer, ctx: { userId: string }
                 height: render.height,
                 cache_hit: render.cache_hit,
                 rendered_via: render.rendered_via,
-                // signed_url is intentionally omitted: it is only used internally
-                // to fetch bytes from Supabase Storage and must never be exposed
-                // to clients (even a short-lived URL is a governance risk).
+                bytes_path: 'in-process buffer (no signed URL minted)',
               }),
             },
           ],

@@ -59,11 +59,11 @@ internalDebugRoute.post('/internal-debug/render', async (c) => {
       forceRefresh: body.force_refresh,
       classification: body.classification,
     });
-    // Strip signed_url — internal-debug is for ops visibility only,
-    // not for clients to obtain download URLs. Governance: signed URLs
-    // must never leave the service boundary.
-    const { signed_url: _su, signed_url_expires_at: _exp, ...safe } = res;
-    return c.json(safe);
+    // Strip bytes (not JSON-serializable) — internal-debug returns metadata only.
+    // Governance: no signed_url exists in the result either; bytes flow only
+    // through the MCP tool path which base64-encodes in-process.
+    const { bytes: _bytes, mime_type: _mt, ...safe } = res;
+    return c.json({ ...safe, size_bytes: res.bytes.length });
   } catch (err) {
     if (err instanceof RenderForUserError) {
       return c.json<ErrorResponse>(

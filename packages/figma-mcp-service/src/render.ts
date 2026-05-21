@@ -116,7 +116,7 @@ async function renderInner(opts: RenderOpts): Promise<RenderResult> {
   const page = await context.newPage();
   const t0 = Date.now();
   try {
-    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30_000 });
+    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60_000 });
 
     // Wait for either login redirect or canvas
     if (page.url().includes('/login') || page.url().includes('?login_at=')) {

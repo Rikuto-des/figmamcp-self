@@ -5,7 +5,6 @@
 import type {
   Classification,
   ImageFormat,
-  RenderResponse,
   RenderScale,
 } from '@figma-mcp-poc/shared';
 import { computeCacheKey } from '../cache.js';
@@ -14,13 +13,34 @@ import { log } from '../logger.js';
 import { renderNode, RenderError } from '../render.js';
 import {
   appendAuditLog,
-  createSignedUrl,
+  downloadAsset,
   findCachedAsset,
   findLatestAsset,
   insertAsset,
   uploadAsset,
 } from '../supabase.js';
 import { normalizeNodeId, parseFigmaUrl } from '../url-parser.js';
+
+/**
+ * Internal-only result from renderForUser. Carries the raw bytes so callers
+ * (MCP tool, debug endpoint) never need to mint a signed URL — they read
+ * bytes directly. No transient public URL is ever created for the image.
+ */
+export interface RenderResult {
+  asset_id: string;
+  file_key: string;
+  node_id: string;
+  width: number;
+  height: number;
+  format: ImageFormat;
+  scale: RenderScale;
+  classification: Classification;
+  tier: 'A' | 'B' | 'C';
+  cache_hit: boolean;
+  rendered_via: 'cache' | 'playwright';
+  bytes: Buffer;
+  mime_type: string;
+}
 
 export interface RenderForUserInput {
   userId: string;
@@ -61,7 +81,7 @@ function resolveTarget(input: RenderForUserInput): { fileKey: string; nodeId: st
   return { fileKey: input.fileKey, nodeId: normalizeNodeId(input.nodeId) };
 }
 
-export async function renderForUser(input: RenderForUserInput): Promise<RenderResponse> {
+export async function renderForUser(input: RenderForUserInput): Promise<RenderResult> {
   const t0 = Date.now();
   const { fileKey, nodeId } = resolveTarget(input);
   const format: ImageFormat = input.format ?? 'png';
@@ -78,9 +98,9 @@ export async function renderForUser(input: RenderForUserInput): Promise<RenderRe
   });
 
   // Fast path: serve the most recent cached render without calling Figma REST.
-  // This avoids rate-limit (429) errors when the same node is re-requested quickly.
-  // TTL is 30 s — just long enough for the MCP tool to fetch bytes internally.
-  // The signed URL is NEVER returned to the client; only bytes (base64) are.
+  // Bytes are streamed directly from Supabase Storage using service_role auth —
+  // NO signed URL is ever minted. Governance invariant: there is no public-bearer
+  // artifact for the image at any point.
   if (!input.forceRefresh) {
     log.info('render.cache_lookup', { userId, fileKey, nodeId, type: 'fast_path' });
     const latest = await findLatestAsset({ fileKey, nodeId, format, scale, userId });
@@ -92,15 +112,10 @@ export async function renderForUser(input: RenderForUserInput): Promise<RenderRe
         assetId: latest.id,
         storagePath: latest.storage_path,
         source: 'fast_path (no Figma REST call)',
-        signedUrlTtlSec: 30,
-        signedUrlExposedToClient: false,
+        bytesPath: 'service_role direct download (no signed URL minted)',
       });
-      const signed = await createSignedUrl(latest.storage_path, 30);
-      log.info('render.signed_url_created', {
-        ttlSec: 30,
-        purpose: 'internal fetch only — expires before client could use it',
-        exposedToClient: false,
-      });
+      const bytes = await downloadAsset(latest.storage_path);
+      log.info('render.bytes_loaded', { source: 'storage.download', bytes: bytes.length, signedUrlCreated: false });
       await appendAuditLog({
         userId,
         event: 'render.cache_hit',
@@ -110,8 +125,6 @@ export async function renderForUser(input: RenderForUserInput): Promise<RenderRe
       log.info('render.complete', { userId, fileKey, nodeId, cacheHit: true, durationMs: Date.now() - t0 });
       return {
         asset_id: latest.id,
-        signed_url: signed.url,
-        signed_url_expires_at: signed.expiresAt,
         cache_hit: true,
         rendered_via: 'cache',
         width: latest.width ?? 0,
@@ -122,6 +135,8 @@ export async function renderForUser(input: RenderForUserInput): Promise<RenderRe
         tier: latest.tier,
         file_key: latest.file_key,
         node_id: latest.node_id,
+        bytes,
+        mime_type: latest.mime_type ?? (format === 'jpg' ? 'image/jpeg' : 'image/png'),
       };
     }
     log.info('render.cache_miss', { userId, fileKey, nodeId });
@@ -129,36 +144,62 @@ export async function renderForUser(input: RenderForUserInput): Promise<RenderRe
 
   try {
     log.info('render.figma_rest_call', { fileKey, purpose: 'get file version for cache key' });
-    const meta = await getFileMeta(fileKey);
+    // The Figma REST PAT may not have access to every file the logged-in browser
+    // session can see (team/SSO scoping). Playwright still works via cookies, so
+    // we fall back to a date-based cache key instead of failing the whole render.
+    let fileVersion: string;
+    try {
+      // Hard 10 s cap: if Figma REST is slow/hanging/rate-limited, give up and
+      // fall back to a date-based cache key. Playwright (cookies) still works.
+      const meta = await Promise.race([
+        getFileMeta(fileKey),
+        new Promise<never>((_, rej) =>
+          setTimeout(() => rej(new Error('figma_rest_timeout')), 10_000),
+        ),
+      ]);
+      fileVersion = meta.lastModified;
+    } catch (e) {
+      const isPatScopeErr = e instanceof FigmaApiError && e.code === 'figma_node_not_found';
+      const isTimeoutErr = e instanceof Error && e.message === 'figma_rest_timeout';
+      const isRateLimitErr =
+        e instanceof FigmaApiError && e.code === 'internal_error' && /rate/i.test(e.message);
+      if (isPatScopeErr || isTimeoutErr || isRateLimitErr) {
+        fileVersion = `no-rest-${new Date().toISOString().slice(0, 10)}`;
+        log.warn('render.figma_rest_unavailable_fallback', {
+          fileKey,
+          fallback: fileVersion,
+          reason: isPatScopeErr
+            ? 'PAT 範囲外'
+            : isTimeoutErr
+              ? 'REST 10s タイムアウト'
+              : 'REST レート制限',
+        });
+      } else {
+        throw e;
+      }
+    }
 
     const cacheKey = computeCacheKey({
       fileKey,
       nodeId,
       format,
       scale,
-      fileVersion: meta.lastModified,
+      fileVersion,
     });
 
     if (!input.forceRefresh) {
       const cached = await findCachedAsset({ cacheKey, userId });
       if (cached) {
-        const signed = await createSignedUrl(cached.storage_path, 30);
+        const bytes = await downloadAsset(cached.storage_path);
+        log.info('render.bytes_loaded', { source: 'storage.download', bytes: bytes.length, signedUrlCreated: false });
         await appendAuditLog({
           userId,
           event: 'render.cache_hit',
           assetId: cached.id,
           meta: { fileKey, nodeId, durationMs: Date.now() - t0 },
         });
-        await appendAuditLog({
-          userId,
-          event: 'asset.download_url_issued',
-          assetId: cached.id,
-          meta: { ttlSec: 300 },
-        });
         return {
           asset_id: cached.id,
-          signed_url: signed.url,
-          signed_url_expires_at: signed.expiresAt,
           cache_hit: true,
           rendered_via: 'cache',
           width: cached.width ?? 0,
@@ -169,6 +210,8 @@ export async function renderForUser(input: RenderForUserInput): Promise<RenderRe
           tier: cached.tier,
           file_key: cached.file_key,
           node_id: cached.node_id,
+          bytes,
+          mime_type: cached.mime_type ?? (cached.format === 'jpg' ? 'image/jpeg' : 'image/png'),
         };
       }
     }
@@ -199,18 +242,15 @@ export async function renderForUser(input: RenderForUserInput): Promise<RenderRe
       height: rendered.height,
       scale,
       format,
-      fileVersion: meta.lastModified,
+      fileVersion,
       classification,
       sizeBytes: rendered.bytes.length,
     });
 
-    // TTL 30 s: only used for the immediate internal fetch; never exposed to clients.
-    const signed = await createSignedUrl(path, 30);
-    log.info('render.signed_url_created', {
-      ttlSec: 30,
-      purpose: 'internal fetch only — expires before client could use it',
-      exposedToClient: false,
-    });
+    // No signed URL minted. Bytes are already in memory from Playwright (the
+    // upload was a separate copy). Governance invariant: no transient public
+    // URL exists for these bytes — they only ever lived in the service process.
+    log.info('render.bytes_loaded', { source: 'playwright.inline', bytes: rendered.bytes.length, signedUrlCreated: false });
 
     await appendAuditLog({
       userId,
@@ -218,17 +258,9 @@ export async function renderForUser(input: RenderForUserInput): Promise<RenderRe
       assetId: asset.id,
       meta: { fileKey, nodeId, durationMs: Date.now() - t0 },
     });
-    await appendAuditLog({
-      userId,
-      event: 'asset.download_url_issued',
-      assetId: asset.id,
-      meta: { ttlSec: 300 },
-    });
 
     return {
       asset_id: asset.id,
-      signed_url: signed.url,
-      signed_url_expires_at: signed.expiresAt,
       cache_hit: false,
       rendered_via: 'playwright',
       width: rendered.width,
@@ -239,6 +271,8 @@ export async function renderForUser(input: RenderForUserInput): Promise<RenderRe
       tier: 'B',
       file_key: fileKey,
       node_id: nodeId,
+      bytes: rendered.bytes,
+      mime_type: rendered.mimeType,
     };
   } catch (err) {
     if (err instanceof FigmaApiError) {
