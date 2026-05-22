@@ -1,0 +1,680 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>figma-mcp-poc — 社内向け Figma MCP</title>
+<style>
+:root{
+  --bg:#04080f; --bg-card:#08142a; --bg-inner:#060e1c;
+  --bd:#152d4f; --bd2:#1e4070;
+  --cyan:#00ccff; --cdim:rgba(0,204,255,.13);
+  --green:#00e5a0; --red:#ff3355; --amber:#ffaa20;
+  --white:#e4eeff; --muted:#4d6e99; --code:#64ffda;
+  --sans:'Helvetica Neue','Arial','Hiragino Kaku Gothic ProN','Hiragino Sans','Meiryo',sans-serif;
+  --mono:'Courier New','Consolas','Menlo',monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{width:100%;height:100%;overflow:hidden;background:var(--bg);color:var(--white);font-family:var(--sans)}
+
+/* ── grid bg on body ── */
+body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
+  background-image:linear-gradient(rgba(0,204,255,.03) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(0,204,255,.03) 1px,transparent 1px);
+  background-size:52px 52px}
+body::after{content:'';position:fixed;top:0;left:50%;transform:translateX(-50%);
+  width:70vw;height:50vh;pointer-events:none;z-index:0;
+  background:radial-gradient(ellipse at 50% 0%,rgba(0,204,255,.055) 0%,transparent 65%)}
+
+/* ── fixed chrome ── */
+#prog-bar{position:fixed;top:0;left:0;right:0;height:3px;background:rgba(255,255,255,.05);z-index:300}
+#prog-fill{height:100%;background:linear-gradient(90deg,var(--cyan),var(--green));
+  transition:width .4s cubic-bezier(.4,0,.2,1);box-shadow:0 0 10px var(--cyan)}
+#counter{position:fixed;bottom:18px;right:24px;font-family:var(--mono);font-size:12px;
+  color:var(--muted);z-index:300;letter-spacing:.12em}
+#counter .n{color:var(--cyan)}
+#hint{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);
+  font-size:11px;color:var(--muted);z-index:300;letter-spacing:.08em;
+  transition:opacity .8s;white-space:nowrap}
+#hint.gone{opacity:0;pointer-events:none}
+
+/* ── 16:9 stage ── */
+#stage{
+  width:1600px;height:900px;
+  position:absolute;top:50%;left:50%;
+  transform-origin:top left;overflow:hidden;z-index:1;
+}
+
+/* click zones (inside stage) */
+.z-prev{position:absolute;left:0;top:0;width:9%;height:100%;z-index:50;cursor:w-resize}
+.z-next{position:absolute;left:9%;top:0;width:91%;height:100%;z-index:50;cursor:e-resize}
+
+/* ── slides ── */
+.slides{position:relative;width:100%;height:100%}
+.slide{
+  position:absolute;inset:0;display:flex;flex-direction:column;
+  align-items:center;justify-content:flex-start;padding:56px 80px 40px;
+  opacity:0;transform:translateY(12px);
+  transition:opacity .36s ease,transform .36s ease;
+  pointer-events:none;
+}
+.slide.active{opacity:1;transform:translateY(0);pointer-events:auto}
+.slide.out{opacity:0;transform:translateY(-12px)}
+
+/* ── typography ── */
+.tag{font-family:var(--mono);font-size:11px;letter-spacing:.24em;text-transform:uppercase;
+  color:var(--cyan);margin-bottom:14px;opacity:.75}
+h2{font-size:38px;font-weight:700;letter-spacing:-.025em;margin-bottom:24px;line-height:1.1}
+code,.code{font-family:var(--mono);font-size:.82em;color:var(--code);
+  background:rgba(100,255,218,.08);padding:2px 7px;border-radius:3px;
+  border:1px solid rgba(100,255,218,.18)}
+
+/* ── card ── */
+.card{background:var(--bg-card);border:1px solid var(--bd);border-radius:8px;padding:16px 20px}
+.card.danger{border-color:rgba(255,51,85,.4);background:rgba(255,51,85,.06)}
+.card.ok{border-color:rgba(0,229,160,.4);background:rgba(0,229,160,.06)}
+.card.info{border-color:rgba(0,204,255,.35);background:var(--cdim)}
+
+/* ══════════ S1 TITLE ══════════ */
+#s1{text-align:center;gap:16px;justify-content:center}
+#s1 h1{font-family:var(--mono);font-size:88px;font-weight:700;
+  letter-spacing:-.04em;line-height:1;color:var(--white);white-space:nowrap}
+#s1 h1 .a{color:var(--cyan)}
+.cursor{display:inline-block;width:4px;height:.82em;background:var(--cyan);
+  margin-left:4px;vertical-align:text-bottom;animation:blink 1.1s step-end infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:0}}
+#s1 .sub{font-size:20px;color:var(--muted);margin-top:12px;letter-spacing:.02em}
+.badges{display:flex;gap:10px;justify-content:center;margin-top:28px;flex-wrap:wrap}
+.badge{font-family:var(--mono);font-size:11px;letter-spacing:.12em;padding:5px 12px;
+  border-radius:3px;border:1px solid var(--bd);color:var(--muted)}
+.badge.c{border-color:var(--cyan);color:var(--cyan)}
+.badge.g{border-color:var(--green);color:var(--green)}
+
+/* ══════════ S2 PROBLEM ══════════ */
+.flow-row{display:flex;align-items:center;width:100%;max-width:1340px}
+.fn{display:flex;flex-direction:column;align-items:center;gap:6px;flex-shrink:0}
+.fbox{padding:12px 18px;border-radius:7px;border:1px solid var(--bd);background:var(--bg-card);
+  font-size:13px;text-align:center;min-width:108px}
+.fbox.bad{border-color:rgba(255,51,85,.5);background:rgba(255,51,85,.1);color:#ff8899}
+.fbox .ic{font-size:22px;margin-bottom:3px;display:block}
+.flbl{font-family:var(--mono);font-size:9.5px;color:var(--muted);letter-spacing:.1em;text-align:center}
+.arr{flex:1;position:relative;height:1px;background:var(--bd2);min-width:40px}
+.arr::after{content:'';position:absolute;right:-1px;top:50%;transform:translateY(-50%);
+  width:0;height:0;border-top:5px solid transparent;border-bottom:5px solid transparent;
+  border-left:8px solid var(--bd2)}
+.arr.bad{background:rgba(255,51,85,.55)}
+.arr.bad::after{border-left-color:rgba(255,51,85,.55)}
+.arr.bad::before{content:'';position:absolute;top:50%;transform:translateY(-50%);
+  height:3px;width:22px;background:rgba(255,80,80,.9);border-radius:2px;
+  animation:apulse 1.8s ease-in-out infinite}
+@keyframes apulse{0%{left:-22px;opacity:0}25%{opacity:1}75%{opacity:1}100%{left:calc(100% + 4px);opacity:0}}
+.alert{width:100%;max-width:1340px;margin-top:18px;padding:14px 18px;
+  border:1px solid rgba(255,51,85,.45);border-radius:7px;background:rgba(255,51,85,.07);
+  display:flex;gap:12px;align-items:flex-start;font-size:13.5px;line-height:1.65}
+.alert strong{color:#ff8899;font-family:var(--mono)}
+.subcards{display:flex;gap:12px;margin-top:12px;width:100%;max-width:1340px}
+.subcard{flex:1;padding:13px 16px;border-radius:7px;border:1px solid rgba(255,51,85,.3);
+  background:rgba(255,51,85,.05);font-size:12.5px;line-height:1.55}
+.subcard strong{color:#ff8899}
+
+/* ══════════ S3 SOLUTION ══════════ */
+.cmp{display:grid;grid-template-columns:1fr 1fr;gap:24px;width:100%;max-width:1340px}
+.cmp-head{display:flex;align-items:center;gap:9px;padding:10px 16px;border-radius:7px;
+  font-size:14px;font-weight:600;margin-bottom:10px}
+.cmp-head.bad{background:rgba(255,51,85,.1);border:1px solid rgba(255,51,85,.3);color:#ff8899}
+.cmp-head.ok{background:rgba(0,229,160,.1);border:1px solid rgba(0,229,160,.3);color:var(--green)}
+.cmp-item{display:flex;gap:10px;padding:11px 14px;border-radius:6px;
+  background:var(--bg-card);border:1px solid var(--bd);font-size:13px;line-height:1.55;margin-bottom:8px}
+.dot{width:5px;height:5px;border-radius:50%;margin-top:6px;flex-shrink:0}
+.dot.r{background:var(--red)}.dot.g{background:var(--green)}
+
+/* ══════════ S4 ARCH ══════════ */
+.arch-wrap{width:100%;max-width:1440px}
+.arch-svg{width:100%;height:auto;overflow:visible}
+.pulse{stroke-dasharray:10 6;animation:dash 1.6s linear infinite;animation-play-state:paused}
+#s4.active .pulse{animation-play-state:running}
+@keyframes dash{to{stroke-dashoffset:-16}}
+
+/* ══════════ S5 DATA FLOW ══════════ */
+.steps-a{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;width:100%;max-width:1340px}
+.steps-b{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;width:100%;max-width:1008px}
+.step{background:var(--bg-card);border:1px solid var(--bd);border-radius:8px;padding:16px 18px;position:relative}
+.step .n{font-family:var(--mono);font-size:24px;font-weight:700;color:var(--cyan);opacity:.3;line-height:1;margin-bottom:8px}
+.step .t{font-size:13px;font-weight:600;color:var(--white);margin-bottom:4px}
+.step .d{font-size:11.5px;color:var(--muted);line-height:1.55}
+.step .k{font-family:var(--mono);font-size:9.5px;color:var(--code);margin-top:8px;display:block;letter-spacing:.05em}
+.step.hi{border-color:rgba(0,204,255,.35)}.step.hi .n{opacity:.75;color:var(--cyan)}.step.hi .t{color:var(--cyan)}
+.step.ok2{border-color:rgba(0,229,160,.3)}.step.ok2 .n{opacity:.75;color:var(--green)}.step.ok2 .t{color:var(--green)}
+.step::after{content:'→';position:absolute;right:-12px;top:50%;transform:translateY(-50%);color:var(--bd2);font-size:14px;z-index:1}
+.steps-a .step:nth-child(4)::after,.steps-b .step:last-child::after{display:none}
+.row-arr{display:flex;justify-content:center;align-items:center;padding:5px 0}
+.row-arr span{color:var(--bd2);font-size:18px;transform:rotate(90deg);display:block}
+
+/* ══════════ S6 TECH ══════════ */
+.tech-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;width:100%;max-width:1340px}
+.tech{background:var(--bg-card);border:1px solid var(--bd);border-radius:8px;padding:16px 18px;transition:border-color .2s}
+.tech:hover{border-color:var(--bd2)}
+.tech .nm{font-family:var(--mono);font-size:14px;color:var(--cyan);font-weight:600;margin-bottom:5px}
+.tech .rl{font-size:11.5px;color:var(--muted);line-height:1.5}
+.tech .vr{font-family:var(--mono);font-size:9.5px;color:var(--bd2);margin-top:7px}
+
+/* ══════════ S7 SECURITY ══════════ */
+.sec-banner{width:100%;max-width:1340px;margin-bottom:16px;padding:12px 18px;
+  background:rgba(0,229,160,.06);border:1px solid rgba(0,229,160,.3);border-radius:7px;
+  font-family:var(--mono);font-size:12.5px;color:var(--green);display:flex;align-items:center;gap:10px}
+.sec-grid{display:grid;grid-template-columns:1fr 1fr;gap:13px;width:100%;max-width:1340px}
+.sec-item{display:flex;gap:13px;padding:15px 18px;background:var(--bg-card);
+  border:1px solid var(--bd);border-radius:8px;align-items:flex-start}
+.chk{color:var(--green);font-family:var(--mono);font-size:14px;flex-shrink:0;margin-top:1px}
+.sec-t{font-size:13px;font-weight:600;color:var(--white);margin-bottom:3px}
+.sec-d{font-size:11.5px;color:var(--muted);line-height:1.5}
+
+/* ══════════ S8 STATUS ══════════ */
+.phase-chip{display:inline-flex;align-items:center;gap:8px;padding:7px 16px;
+  background:rgba(0,229,160,.1);border:1px solid rgba(0,229,160,.4);border-radius:20px;
+  font-family:var(--mono);font-size:12px;color:var(--green);margin-bottom:20px}
+.pdot{width:6px;height:6px;border-radius:50%;background:var(--green);animation:pdota 2s ease-in-out infinite}
+@keyframes pdota{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.4;transform:scale(.65)}}
+.stat-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:20px;width:100%;max-width:1340px}
+.stat-h{display:flex;align-items:center;gap:7px;font-size:13px;font-weight:600;
+  margin-bottom:11px;padding-bottom:9px;border-bottom:1px solid var(--bd)}
+.sd{width:7px;height:7px;border-radius:50%}
+.sd-g{background:var(--green)}.sd-a{background:var(--amber)}.sd-c{background:var(--cyan)}
+.stat-ul{list-style:none;display:flex;flex-direction:column;gap:7px}
+.stat-ul li{font-size:12px;color:var(--muted);line-height:1.55;padding-left:14px;position:relative}
+.stat-ul li::before{content:'·';position:absolute;left:4px;color:var(--bd2)}
+.stat-ul li .hl{color:var(--white)}
+</style>
+</head>
+<body>
+
+<div id="prog-bar"><div id="prog-fill"></div></div>
+<div id="counter"><span class="n" id="cur">1</span> / <span id="tot">8</span></div>
+<div id="hint">← → キー またはクリックで遷移</div>
+
+<div id="stage">
+  <div class="z-prev" onclick="go(-1)"></div>
+  <div class="z-next" onclick="go(1)"></div>
+
+  <div class="slides">
+
+  <!-- ═══════════════════ S1 TITLE ═══════════════════ -->
+  <section class="slide active" id="s1">
+    <div class="tag">figma-mcp-poc · 2026</div>
+    <h1 style="font-family:var(--mono);font-size:88px;font-weight:700;letter-spacing:-.04em;line-height:1;white-space:nowrap">
+      <span style="color:var(--cyan)">figma</span>-mcp-poc<span class="cursor"></span>
+    </h1>
+    <p style="font-size:20px;color:var(--muted);margin-top:14px;letter-spacing:.02em">
+      公開 S3 を経由しない、社内向け Figma MCP サーバー
+    </p>
+    <div class="badges">
+      <span class="badge c">TypeScript Strict</span>
+      <span class="badge c">MCP SDK v1.0</span>
+      <span class="badge g">Phase 7 完了</span>
+      <span class="badge">Node.js + Hono</span>
+      <span class="badge">Playwright</span>
+      <span class="badge">Supabase</span>
+      <span class="badge">Fly.io ready</span>
+    </div>
+  </section>
+
+  <!-- ═══════════════════ S2 PROBLEM ═══════════════════ -->
+  <section class="slide" id="s2">
+    <div style="width:100%;max-width:1340px">
+      <div class="tag">Problem</div>
+      <h2>公式 Figma MCP の問題点</h2>
+
+      <div class="flow-row">
+        <div class="fn">
+          <div class="fbox"><span class="ic">👨‍💻</span>Developer</div>
+          <span class="flbl">開発者</span>
+        </div>
+        <div class="arr"></div>
+        <div class="fn">
+          <div class="fbox"><span class="ic">🎨</span>Figma</div>
+          <span class="flbl">figma.com</span>
+        </div>
+        <div class="arr"></div>
+        <div class="fn">
+          <div class="fbox bad"><span class="ic">⚠️</span><span style="color:var(--red)">/v1/images</span></div>
+          <span class="flbl" style="color:var(--red)">REST API</span>
+        </div>
+        <div class="arr bad"></div>
+        <div class="fn">
+          <div class="fbox bad"><span class="ic">🌐</span><strong>Public S3</strong></div>
+          <span class="flbl" style="color:var(--red)">figma-alpha-api.s3.us-west-2</span>
+        </div>
+        <div class="arr"></div>
+        <div class="fn">
+          <div class="fbox"><span class="ic">🤖</span>Copilot AI</div>
+          <span class="flbl">VS Code</span>
+        </div>
+      </div>
+
+      <div class="alert" style="margin-top:20px">
+        <span style="font-size:20px;flex-shrink:0;line-height:1.4">🚨</span>
+        <div>
+          Figma 公式 MCP は <strong>/v1/images</strong> を呼び出し、生成された PNG URL が
+          <strong>figma-alpha-api.s3.us-west-2.amazonaws.com</strong>（公開 AWS S3）に乗る。<br>
+          社外クラウドへの設計データ流出 → <span style="color:var(--red);font-weight:600">データガバナンス違反</span>
+        </div>
+      </div>
+
+      <div class="subcards">
+        <div class="subcard"><strong>🔓 無認証アクセス可能</strong><br>presigned URL は期限内なら誰でもアクセス可</div>
+        <div class="subcard"><strong>📋 監査ログなし</strong><br>誰がいつどのデザインを取得したか追跡不可</div>
+        <div class="subcard"><strong>🏢 自社管理外</strong><br>Figma Inc. のインフラ上にデータが滞留</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════ S3 SOLUTION ═══════════════════ -->
+  <section class="slide" id="s3">
+    <div style="width:100%;max-width:1340px">
+      <div class="tag">Solution</div>
+      <h2>提案するアプローチ</h2>
+
+      <div class="cmp">
+        <div>
+          <div class="cmp-head bad">✗ 公式 MCP（従来）</div>
+          <div class="cmp-item"><span class="dot r"></span>Figma REST <code>/v1/images</code> 経由で PNG URL を生成</div>
+          <div class="cmp-item"><span class="dot r"></span>画像が公開 S3 に配置される</div>
+          <div class="cmp-item"><span class="dot r"></span>署名付き URL を Copilot に渡す → 外部 URL として記録</div>
+          <div class="cmp-item"><span class="dot r"></span>監査証跡なし・データ保持期間不明</div>
+        </div>
+        <div>
+          <div class="cmp-head ok">✓ figma-mcp-poc（本 PoC）</div>
+          <div class="cmp-item"><span class="dot g"></span>Playwright が Figma Web を直接レンダリング</div>
+          <div class="cmp-item"><span class="dot g"></span>PNG バイト → Supabase Storage（自社管理・非公開）</div>
+          <div class="cmp-item"><span class="dot g"></span>MCP レスポンスは <strong>base64 PNG インライン</strong>（URL なし）</div>
+          <div class="cmp-item"><span class="dot g"></span>全操作を <code>audit_log</code> テーブルに記録</div>
+        </div>
+      </div>
+
+      <div class="card info" style="margin-top:16px;font-size:13.5px;line-height:1.65;display:flex;gap:13px;align-items:center">
+        <span style="font-size:24px;flex-shrink:0">🔒</span>
+        <div>
+          <strong style="color:var(--cyan)">ガバナンス保証：</strong>
+          <code>/v1/images</code> を一切呼び出さず、設計データは自社 Supabase プロジェクト内のみに存在。
+          MCP ツールは公開 URL を生成しない。
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════ S4 ARCHITECTURE ═══════════════════ -->
+  <section class="slide" id="s4">
+    <div class="arch-wrap">
+      <div class="tag">Architecture</div>
+      <h2 style="margin-bottom:14px">システム構成</h2>
+
+      <svg class="arch-svg" viewBox="0 0 1440 430" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <marker id="ah" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+            <polygon points="0 0,8 3,0 6" fill="#1e4070"/></marker>
+          <marker id="ahc" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+            <polygon points="0 0,8 3,0 6" fill="#00ccff"/></marker>
+          <marker id="ahg" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+            <polygon points="0 0,8 3,0 6" fill="#00e5a0"/></marker>
+        </defs>
+
+        <!-- local boundary -->
+        <rect x="3" y="3" width="1010" height="424" rx="9"
+          fill="none" stroke="#152d4f" stroke-width="1" stroke-dasharray="6,4"/>
+        <text x="18" y="22" font-family="'Courier New',monospace" font-size="10"
+          fill="#3a6090" letter-spacing="3">LOCAL MACHINE</text>
+
+        <!-- VS Code -->
+        <rect x="20" y="90" width="162" height="120" rx="7"
+          fill="#08142a" stroke="#152d4f" stroke-width="1"/>
+        <text x="101" y="128" font-family="'Helvetica Neue',sans-serif" font-size="14"
+          fill="#e4eeff" text-anchor="middle" font-weight="600">VS Code</text>
+        <text x="101" y="148" font-family="'Helvetica Neue',sans-serif" font-size="11"
+          fill="#7ba3cc" text-anchor="middle">Copilot Chat</text>
+        <text x="101" y="166" font-family="'Courier New',monospace" font-size="10"
+          fill="#4d6e99" text-anchor="middle">Agent モード</text>
+        <text x="101" y="183" font-family="'Courier New',monospace" font-size="10"
+          fill="#4d6e99" text-anchor="middle">.vscode/mcp.json</text>
+
+        <!-- service container -->
+        <rect x="216" y="18" width="796" height="408" rx="9"
+          fill="#060e1c" stroke="#152d4f" stroke-width="1"/>
+        <text x="614" y="40" font-family="'Courier New',monospace" font-size="11"
+          fill="#7ba3cc" text-anchor="middle" letter-spacing="1">figma-mcp-service  :3000  (Hono + Node.js)</text>
+
+        <!-- Auth -->
+        <rect x="238" y="62" width="118" height="60" rx="6"
+          fill="#08142a" stroke="#152d4f" stroke-width="1"/>
+        <text x="297" y="89" font-family="'Courier New',monospace" font-size="11"
+          fill="#00ccff" text-anchor="middle">Auth</text>
+        <text x="297" y="107" font-family="'Helvetica Neue',sans-serif" font-size="10"
+          fill="#7ba3cc" text-anchor="middle">JWT / fmps_ key</text>
+
+        <!-- MCP Transport -->
+        <rect x="376" y="62" width="148" height="60" rx="6"
+          fill="#08142a" stroke="#152d4f" stroke-width="1"/>
+        <text x="450" y="89" font-family="'Courier New',monospace" font-size="11"
+          fill="#00ccff" text-anchor="middle">MCP Transport</text>
+        <text x="450" y="107" font-family="'Helvetica Neue',sans-serif" font-size="10"
+          fill="#7ba3cc" text-anchor="middle">HTTP / SSE sessions</text>
+
+        <!-- render service -->
+        <rect x="238" y="186" width="152" height="68" rx="6"
+          fill="#08142a" stroke="#152d4f" stroke-width="1"/>
+        <text x="314" y="216" font-family="'Courier New',monospace" font-size="11"
+          fill="#00ccff" text-anchor="middle">Render Service</text>
+        <text x="314" y="234" font-family="'Helvetica Neue',sans-serif" font-size="10"
+          fill="#7ba3cc" text-anchor="middle">cache / upload</text>
+
+        <!-- playwright -->
+        <rect x="412" y="186" width="140" height="68" rx="6"
+          fill="#08142a" stroke="#152d4f" stroke-width="1"/>
+        <text x="482" y="216" font-family="'Courier New',monospace" font-size="11"
+          fill="#00ccff" text-anchor="middle">Playwright</text>
+        <text x="482" y="234" font-family="'Helvetica Neue',sans-serif" font-size="10"
+          fill="#7ba3cc" text-anchor="middle">headless Chrome</text>
+
+        <!-- supabase client -->
+        <rect x="574" y="186" width="142" height="68" rx="6"
+          fill="#08142a" stroke="#152d4f" stroke-width="1"/>
+        <text x="645" y="216" font-family="'Courier New',monospace" font-size="11"
+          fill="#00ccff" text-anchor="middle">Supabase Client</text>
+        <text x="645" y="234" font-family="'Helvetica Neue',sans-serif" font-size="10"
+          fill="#7ba3cc" text-anchor="middle">service_role</text>
+
+        <!-- DB panel -->
+        <rect x="238" y="318" width="478" height="88" rx="6"
+          fill="#040a14" stroke="#152d4f" stroke-width="1"/>
+        <text x="477" y="342" font-family="'Helvetica Neue',sans-serif" font-size="10"
+          fill="#4d6e99" text-anchor="middle">PostgreSQL  (RLS 有効)</text>
+        <line x1="380" y1="352" x2="380" y2="396" stroke="#152d4f" stroke-width="1"/>
+        <line x1="574" y1="352" x2="574" y2="396" stroke="#152d4f" stroke-width="1"/>
+        <text x="309" y="374" font-family="'Courier New',monospace" font-size="11"
+          fill="#64ffda" text-anchor="middle">assets</text>
+        <text x="477" y="374" font-family="'Courier New',monospace" font-size="11"
+          fill="#64ffda" text-anchor="middle">audit_log</text>
+        <text x="638" y="374" font-family="'Courier New',monospace" font-size="11"
+          fill="#64ffda" text-anchor="middle">api_keys</text>
+
+        <!-- ── External ── -->
+        <text x="1166" y="62" font-family="'Courier New',monospace" font-size="10"
+          fill="#3a6090" text-anchor="middle" letter-spacing="3">EXTERNAL</text>
+        <!-- figma.com -->
+        <rect x="1080" y="80" width="172" height="100" rx="8"
+          fill="#08142a" stroke="#1e4070" stroke-width="1.5"/>
+        <text x="1166" y="118" font-family="'Helvetica Neue',sans-serif" font-size="14"
+          fill="#e4eeff" text-anchor="middle" font-weight="600">figma.com</text>
+        <text x="1166" y="138" font-family="'Courier New',monospace" font-size="10"
+          fill="#7ba3cc" text-anchor="middle">Figma Web UI</text>
+        <text x="1166" y="155" font-family="'Courier New',monospace" font-size="10"
+          fill="#7ba3cc" text-anchor="middle">REST /v1/files</text>
+
+        <!-- supabase cloud -->
+        <rect x="1080" y="248" width="172" height="106" rx="8"
+          fill="#08142a" stroke="#1e4070" stroke-width="1.5"/>
+        <text x="1166" y="286" font-family="'Helvetica Neue',sans-serif" font-size="14"
+          fill="#e4eeff" text-anchor="middle" font-weight="600">Supabase</text>
+        <text x="1166" y="306" font-family="'Courier New',monospace" font-size="10"
+          fill="#7ba3cc" text-anchor="middle">Auth / Postgres</text>
+        <text x="1166" y="322" font-family="'Courier New',monospace" font-size="10"
+          fill="#7ba3cc" text-anchor="middle">Storage (private)</text>
+        <text x="1166" y="338" font-family="'Courier New',monospace" font-size="10"
+          fill="#4d6e99" text-anchor="middle">nfclpcjs…supabase.co</text>
+
+        <!-- ── Arrows ── -->
+        <!-- VS Code ← → service (MCP) -->
+        <line x1="184" y1="135" x2="214" y2="135"
+          stroke="#00ccff" stroke-width="1.5" marker-end="url(#ahc)"/>
+        <text x="199" y="129" font-family="'Courier New',monospace" font-size="9"
+          fill="#00ccff" text-anchor="middle">req</text>
+        <line x1="214" y1="158" x2="184" y2="158"
+          stroke="#00ccff" stroke-width="1.5" marker-end="url(#ahc)"/>
+        <text x="199" y="172" font-family="'Courier New',monospace" font-size="9"
+          fill="#00ccff" text-anchor="middle">PNG</text>
+        <text x="199" y="148" font-family="'Courier New',monospace" font-size="8"
+          fill="#4d6e99" text-anchor="middle">MCP HTTP</text>
+
+        <!-- Auth → Render -->
+        <path d="M 297 122 L 297 158 L 295 184"
+          fill="none" stroke="#152d4f" stroke-width="1" marker-end="url(#ah)"/>
+        <!-- MCP Transport → Render -->
+        <path d="M 450 122 L 450 160 L 394 184"
+          fill="none" stroke="#152d4f" stroke-width="1" marker-end="url(#ah)"/>
+        <!-- Render → Playwright -->
+        <line x1="390" y1="220" x2="410" y2="220"
+          stroke="#152d4f" stroke-width="1" marker-end="url(#ah)"/>
+        <!-- Render → Supabase Client -->
+        <line x1="390" y1="236" x2="572" y2="236"
+          stroke="#152d4f" stroke-width="1" marker-end="url(#ah)"/>
+        <!-- Render → DB -->
+        <line x1="314" y1="254" x2="314" y2="316"
+          stroke="#152d4f" stroke-width="1" marker-end="url(#ah)"/>
+
+        <!-- Playwright → figma.com (animated) -->
+        <path class="pulse" d="M 552 218 Q 820 180 1078 130"
+          fill="none" stroke="#00ccff" stroke-width="1.8" marker-end="url(#ahc)"/>
+        <text x="830" y="182" font-family="'Courier New',monospace" font-size="9"
+          fill="#00ccff" text-anchor="middle" transform="rotate(-7,830,182)">navigate + screenshot</text>
+
+        <!-- Supabase Client → Supabase cloud (animated) -->
+        <path class="pulse" d="M 716 240 Q 900 240 1078 300"
+          fill="none" stroke="#00e5a0" stroke-width="1.8" marker-end="url(#ahg)"/>
+        <text x="900" y="256" font-family="'Courier New',monospace" font-size="9"
+          fill="#00e5a0" text-anchor="middle">upload / query</text>
+      </svg>
+    </div>
+  </section>
+
+  <!-- ═══════════════════ S5 DATA FLOW ═══════════════════ -->
+  <section class="slide" id="s5">
+    <div style="width:100%;max-width:1340px">
+      <div class="tag">Data Flow</div>
+      <h2>レンダリング処理フロー</h2>
+
+      <div class="steps-a">
+        <div class="step">
+          <div class="n">01</div>
+          <div class="t">URL 貼り付け</div>
+          <div class="d">Copilot Chat に Figma URL を投稿。ツール自動発火。</div>
+          <span class="k">figma_get_screenshot</span>
+        </div>
+        <div class="step hi">
+          <div class="n">02</div>
+          <div class="t">認証</div>
+          <div class="d">JWT または <code>fmps_</code> API キーを検証し userId を取得</div>
+          <span class="k">auth.ts · rate limit</span>
+        </div>
+        <div class="step">
+          <div class="n">03</div>
+          <div class="t">キャッシュ確認</div>
+          <div class="d"><code>assets</code> テーブルに同一ノードの PNG が存在するか確認</div>
+          <span class="k">cache_key = SHA256</span>
+        </div>
+        <div class="step hi">
+          <div class="n">04</div>
+          <div class="t">Playwright レンダリング</div>
+          <div class="d">Figma Web を headless Chrome で開き Shift+0 でズーム → スクリーンショット取得</div>
+          <span class="k">render.ts · pLimit(2)</span>
+        </div>
+      </div>
+
+      <div class="row-arr"><span>→</span></div>
+
+      <div class="steps-b" style="margin:0 auto">
+        <div class="step ok2">
+          <div class="n">05</div>
+          <div class="t">Supabase アップロード</div>
+          <div class="d">PNG バイトを <code>&lt;userId&gt;/…/&lt;digest&gt;.png</code> に保存</div>
+          <span class="k">Storage (非公開バケット)</span>
+        </div>
+        <div class="step">
+          <div class="n">06</div>
+          <div class="t">Audit Log</div>
+          <div class="d">actor / event / asset_id / meta を <code>audit_log</code> に記録</div>
+          <span class="k">RLS 有効</span>
+        </div>
+        <div class="step ok2">
+          <div class="n">07</div>
+          <div class="t">base64 PNG 返却</div>
+          <div class="d">MCP レスポンスに直接 base64 でインライン。署名 URL は未発行。</div>
+          <span class="k">type: "image"</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════ S6 TECH STACK ═══════════════════ -->
+  <section class="slide" id="s6">
+    <div style="width:100%;max-width:1340px">
+      <div class="tag">Tech Stack</div>
+      <h2>技術スタック</h2>
+      <div class="tech-grid">
+        <div class="tech"><div class="nm">TypeScript</div><div class="rl">strict mode + ESM。型安全な全レイヤー実装</div><div class="vr">v5.4 · NodeNext</div></div>
+        <div class="tech"><div class="nm">Hono</div><div class="rl">軽量 HTTP フレームワーク。ゼロ依存・高速ルーティング</div><div class="vr">v4.6 + @hono/node-server</div></div>
+        <div class="tech"><div class="nm">Playwright</div><div class="rl">Chromium headless 制御。Figma Web を永続セッションでレンダリング</div><div class="vr">v1.49 · launchPersistentContext</div></div>
+        <div class="tech"><div class="nm">MCP SDK</div><div class="rl">公式 Model Context Protocol SDK。HTTP Streamable Transport</div><div class="vr">v1.0.4 · WebStandard</div></div>
+        <div class="tech"><div class="nm">Supabase</div><div class="rl">Auth / PostgreSQL / Storage をワンセット。RLS によるユーザー分離</div><div class="vr">supabase-js v2</div></div>
+        <div class="tech"><div class="nm">Zod</div><div class="rl">ランタイム型バリデーション。env vars・API 入力をスキーマ検証</div><div class="vr">v3.23</div></div>
+        <div class="tech"><div class="nm">pnpm workspaces</div><div class="rl">モノレポ管理。shared / figma-mcp-service の 2 パッケージ構成</div><div class="vr">pnpm v9</div></div>
+        <div class="tech"><div class="nm">Fly.io</div><div class="rl">コンテナデプロイ。NRT リージョン、min 1 machine（セッション保持）</div><div class="vr">Dockerfile + fly.toml 準備済み</div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════ S7 SECURITY ═══════════════════ -->
+  <section class="slide" id="s7">
+    <div style="width:100%;max-width:1340px">
+      <div class="tag">Security</div>
+      <h2>セキュリティ設計</h2>
+
+      <div class="sec-banner">
+        <span>✓</span>
+        <span><strong>/v1/images</strong> の呼び出しなし確認済み &nbsp;—&nbsp;
+          <span style="opacity:.6;font-size:11px">grep -rn "/v1/images" packages/ → 0 件</span>
+        </span>
+      </div>
+
+      <div class="sec-grid">
+        <div class="sec-item">
+          <span class="chk">✓</span>
+          <div><div class="sec-t">Per-user データ分離 (RLS)</div>
+          <div class="sec-d">全 Supabase クエリに <code>created_by = userId</code> を明示。RLS ポリシーでダブルチェック。ユーザー A が B のアセットを参照不可。</div></div>
+        </div>
+        <div class="sec-item">
+          <span class="chk">✓</span>
+          <div><div class="sec-t">2 種類の認証方式</div>
+          <div class="sec-d">短寿命 <code>JWT</code>（Supabase 発行・1h）と長寿命 <code>fmps_</code> API キー（SHA256 ハッシュ保存）の両対応。</div></div>
+        </div>
+        <div class="sec-item">
+          <span class="chk">✓</span>
+          <div><div class="sec-t">公開 URL ゼロ</div>
+          <div class="sec-d">MCP ツールは PNG バイトを base64 インラインで返す。presigned URL の発行ルートは MCP 経路に存在しない。</div></div>
+        </div>
+        <div class="sec-item">
+          <span class="chk">✓</span>
+          <div><div class="sec-t">Rate Limiting</div>
+          <div class="sec-d">IP ごとに認証失敗 60 回/分の上限。スライディングウィンドウでブルートフォース攻撃を防御。</div></div>
+        </div>
+        <div class="sec-item">
+          <span class="chk">✓</span>
+          <div><div class="sec-t">全操作の監査ログ</div>
+          <div class="sec-d"><code>audit_log</code> テーブルに actor / event / asset_id / meta を記録。誰がいつ何をレンダリングしたか追跡可能。</div></div>
+        </div>
+        <div class="sec-item">
+          <span class="chk">✓</span>
+          <div><div class="sec-t">分類タグ</div>
+          <div class="sec-d">アセットに <code>classification</code>（internal / confidential）と <code>tier</code>（A/B/C）を付与。将来的なアクセスポリシー差別化に対応。</div></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════ S8 STATUS ═══════════════════ -->
+  <section class="slide" id="s8">
+    <div style="width:100%;max-width:1340px">
+      <div class="tag">Status &amp; Next</div>
+      <h2>現状と今後</h2>
+      <div class="phase-chip"><span class="pdot"></span>Phase 7 完了 — MVP 稼働中</div>
+
+      <div class="stat-grid">
+        <div>
+          <div class="stat-h"><span class="sd sd-g"></span>実装済み</div>
+          <ul class="stat-ul">
+            <li><span class="hl">Playwright レンダリング</span>（persistent profile）</li>
+            <li><span class="hl">MCP HTTP サーバー</span>（Streamable HTTP/SSE）</li>
+            <li><span class="hl">2 ツール</span>：screenshot / node-info</li>
+            <li><span class="hl">JWT + fmps_ 認証</span></li>
+            <li><span class="hl">Supabase RLS</span> per-user 分離</li>
+            <li><span class="hl">キャッシュ</span>（SHA256 キー）</li>
+            <li><span class="hl">監査ログ</span> + 分類タグ</li>
+            <li><span class="hl">Fly.io</span> デプロイ準備完了</li>
+          </ul>
+        </div>
+        <div>
+          <div class="stat-h"><span class="sd sd-a"></span>既知の制限</div>
+          <ul class="stat-ul">
+            <li>セッションが<span class="hl">インメモリ</span> → 1 台構成のみ</li>
+            <li>キャッシュ TTL の自動削除ジョブ未実装</li>
+            <li>Figma REST 403 時は<span class="hl">日付ベースキャッシュキー</span>にフォールバック</li>
+            <li>テキスト可読性改善（viewport リサイズ）作業中</li>
+            <li>Figma ログイン失効時は手動で再ログイン必要</li>
+          </ul>
+        </div>
+        <div>
+          <div class="stat-h"><span class="sd sd-c"></span>次のステップ</div>
+          <ul class="stat-ul">
+            <li><span class="hl">Redis</span> セッションストア（水平スケール対応）</li>
+            <li><span class="hl">pg_cron</span> でキャッシュ自動削除</li>
+            <li><span class="hl">IdP 連携</span>（OIDC / SAML）</li>
+            <li><span class="hl">WAF / DDoS</span> 保護（Cloudflare）</li>
+            <li>構造化ログの外部 Sink（Datadog 等）</li>
+            <li><span class="hl">Fly.io デプロイ</span>（secrets 設定後すぐ可能）</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  </div><!-- /slides -->
+</div><!-- /stage -->
+
+<script>
+const N=8; let cur=1;
+const slides=Array.from(document.querySelectorAll('.slide'));
+const fill=document.getElementById('prog-fill');
+const curEl=document.getElementById('cur');
+const hint=document.getElementById('hint');
+const stage=document.getElementById('stage');
+
+function scale(){
+  const s=Math.min(window.innerWidth/1600,window.innerHeight/900);
+  stage.style.transform=`translate(-50%,-50%) scale(${s})`;
+}
+window.addEventListener('resize',scale);
+scale();
+
+function render(){
+  fill.style.width=(cur/N*100)+'%';
+  curEl.textContent=cur;
+}
+
+function go(d){
+  const next=cur+d;
+  if(next<1||next>N)return;
+  hint.classList.add('gone');
+  const prev=slides[cur-1];
+  prev.classList.remove('active');
+  prev.classList.add('out');
+  setTimeout(()=>prev.classList.remove('out'),380);
+  cur=next;
+  slides[cur-1].classList.add('active');
+  render();
+}
+
+document.addEventListener('keydown',e=>{
+  if(['ArrowRight','ArrowDown',' '].includes(e.key)){e.preventDefault();go(1);}
+  if(['ArrowLeft','ArrowUp'].includes(e.key)){e.preventDefault();go(-1);}
+});
+render();
+</script>
+</body>
+</html>

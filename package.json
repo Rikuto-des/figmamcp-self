@@ -11,6 +11,7 @@
     "build": "pnpm -r build",
     "dev": "pnpm --filter figma-mcp-service dev",
     "login-figma": "pnpm --filter figma-mcp-service exec tsx scripts/login-figma.ts",
+    "export-slides": "pnpm --filter figma-mcp-service exec tsx scripts/export-slides-pdf.ts",
     "get-token": "tsx scripts/get-token.ts",
     "issue-api-key": "tsx scripts/issue-api-key.ts",
     "test": "pnpm -r test",

@@ -261,6 +261,82 @@ async function renderInner(opts: RenderOpts): Promise<RenderResult> {
     await page.keyboard.press('Shift+0').catch(() => undefined);
     await page.waitForTimeout(1500);
 
+    // ── DOM snapshot to find W/H input selectors (dev-only) ─────────────────
+    if (process.env.RENDER_DEBUG === '1') {
+      const domSnap = await page.evaluate(() => {
+        const allInputs = Array.from(document.querySelectorAll('input'));
+        const propEl = document.querySelector('[class*="properties"]');
+        const propInputs = propEl
+          ? Array.from(propEl.querySelectorAll('input')).map((i) => ({
+              value: i.value,
+              aria: i.getAttribute('aria-label'),
+              type: i.type,
+            }))
+          : [];
+        const spans = Array.from(document.querySelectorAll('span, label, div'))
+          .filter((el) => {
+            const t = el.textContent?.trim() ?? '';
+            return (t === 'W' || t === 'H' || t === 'X' || t === 'Y') && el.children.length === 0;
+          })
+          .slice(0, 8)
+          .map((el) => ({
+            tag: el.tagName,
+            text: el.textContent?.trim(),
+            parent: el.parentElement?.tagName,
+            siblingInput: el.parentElement
+              ? (el.parentElement.querySelector('input') as HTMLInputElement | null)?.value
+              : null,
+          }));
+        return {
+          totalInputs: allInputs.length,
+          allInputDetails: allInputs.map((i) => ({
+            value: i.value,
+            aria: i.getAttribute('aria-label'),
+            placeholder: i.placeholder,
+            type: i.type,
+          })),
+          propEl: propEl ? propEl.tagName : null,
+          propInputs,
+          whSpans: spans,
+        };
+      }).catch(() => null);
+      log.warn('render.debug_dom_snap', domSnap ?? { error: 'eval failed' });
+    }
+    // ─────────────────────────────────────────────────────────────────────────
+
+    // ── Viewport auto-resize for better text legibility ───────────────────────
+    // If the target node is a tall portrait frame (e.g. 576×3992), the default
+    // 1920×1080 landscape viewport makes Figma zoom out to ≈0.27× → unreadable
+    // text.  Reading the frame's W/H from the right-panel inputs (values are
+    // accessible even when the panel is visibility:hidden) and resizing to a
+    // portrait viewport lets Figma zoom in to ≈0.75×, giving crisp glyphs.
+    const frameDims = await tryGetFrameDimsFromDOM(page);
+    if (frameDims) {
+      const currentVp = page.viewportSize()!;
+      const { vpW, vpH } = calcOptimalViewport(frameDims);
+      // Estimate current vs proposed zoom (canvas ≈ viewport after panels hidden)
+      const currentZoom = Math.min(
+        currentVp.width / frameDims.width,
+        currentVp.height / frameDims.height,
+      );
+      const newZoom = Math.min(vpW / frameDims.width, vpH / frameDims.height);
+      if (newZoom > currentZoom * 1.25) {
+        log.info('render.viewport_resize', {
+          frameW: frameDims.width,
+          frameH: frameDims.height,
+          vpW,
+          vpH,
+          zoomBefore: +currentZoom.toFixed(3),
+          zoomAfter: +newZoom.toFixed(3),
+        });
+        await page.setViewportSize({ width: vpW, height: vpH });
+        await page.waitForTimeout(500);
+        await page.keyboard.press('Shift+0').catch(() => undefined);
+        await page.waitForTimeout(1500);
+      }
+    }
+    // ─────────────────────────────────────────────────────────────────────────
+
     // getBoundingClientRect() in-page is more reliable than Playwright's
     // boundingBox() for canvas elements that are sized via CSS transforms.
     // We pick the largest canvas on the page (= Figma design surface).
@@ -356,6 +432,81 @@ async function getCanvasClip(
     await page.waitForTimeout(1000);
   }
   return null; // caller will use viewport fallback
+}
+
+/**
+ * Read the selected node's W and H from Figma's right-panel inputs.
+ * CSS `visibility:hidden` on the panel does NOT affect `element.value`,
+ * so this works even after we've injected the panel-hiding stylesheet.
+ */
+async function tryGetFrameDimsFromDOM(
+  page: Page,
+): Promise<{ width: number; height: number } | null> {
+  return page
+    .evaluate(() => {
+      const numVal = (el: HTMLInputElement | null): number | null => {
+        if (!el) return null;
+        const v = parseFloat(el.value.replace(/,/g, '').trim());
+        return v > 0 && v < 50_000 && isFinite(v) ? v : null;
+      };
+
+      // Strategy 1: inputs with aria-label "W" / "H" (Figma has used these historically)
+      const wEl =
+        document.querySelector<HTMLInputElement>('input[aria-label="W"]') ??
+        document.querySelector<HTMLInputElement>('input[aria-label="Width"]');
+      const hEl =
+        document.querySelector<HTMLInputElement>('input[aria-label="H"]') ??
+        document.querySelector<HTMLInputElement>('input[aria-label="Height"]');
+      const w1 = numVal(wEl);
+      const h1 = numVal(hEl);
+      if (w1 && h1) return { width: w1, height: h1 };
+
+      // Strategy 2: first two positive-integer inputs inside the right panel
+      const panel = document.querySelector('[data-testid="right-panel"]');
+      if (panel) {
+        const dims: number[] = [];
+        for (const el of Array.from(panel.querySelectorAll<HTMLInputElement>('input'))) {
+          const raw = el.value.replace(/,/g, '').trim();
+          // Accept only whole numbers (pixel dimensions are integers in Figma)
+          if (/^\d+$/.test(raw)) {
+            const v = parseInt(raw, 10);
+            if (v > 0 && v < 50_000) {
+              dims.push(v);
+              if (dims.length === 2) break;
+            }
+          }
+        }
+        if (dims.length === 2) return { width: dims[0]!, height: dims[1]! };
+      }
+
+      return null;
+    })
+    .catch(() => null);
+}
+
+/**
+ * Calculate an optimal viewport size that improves Figma's zoom factor for `frame`.
+ *
+ * Strategy: keep viewport WIDTH fixed at 1 920 px so Figma's sidebar layout
+ * (left/right panels, toolbars) remains intact.  Only increase the HEIGHT to
+ * accommodate tall portrait frames.
+ *
+ * Reference frame 576 × 3 992 (portrait):
+ *   projectedH = 3992 × (1920/576) = 13 306 → capped to 2 000
+ *   → viewport 1920 × 2 000  → Figma zoom ≈ 0.50×
+ *   vs. default  1920 × 1080  → Figma zoom ≈ 0.27×
+ */
+function calcOptimalViewport(frame: { width: number; height: number }): {
+  vpW: number;
+  vpH: number;
+} {
+  const FIXED_W = 1_920; // keep width so Figma sidebar layout is unaffected
+  const MAX_H = 2_000;   // caps effective PNG height at ≈6 000 px at dsf=3
+
+  // Project frame onto the fixed viewport width, then cap to MAX_H
+  const projectedH = Math.round(frame.height * (FIXED_W / frame.width));
+  const vpH = Math.min(MAX_H, Math.max(1_080, projectedH));
+  return { vpW: FIXED_W, vpH };
 }
 
 export async function shutdown(): Promise<void> {
