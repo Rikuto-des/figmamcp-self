@@ -237,17 +237,25 @@ async function renderInner(opts: RenderOpts): Promise<RenderResult> {
       throw new RenderError('playwright_timeout', 'canvas did not appear in time');
     }
 
-    // Dismiss any remaining dialogs after canvas appears
-    await dismissFigmaDialogs(page);
+    // Dismiss any remaining dialogs after canvas appears.
+    // Use click-only variant — Escape would deselect the auto-selected node
+    // (from node-id in the URL), breaking Shift+1 "zoom to selection" below.
+    await dismissDialogsByClick(page);
 
-    // Hide side panels and toolbar for a cleaner shot.
-    // NOTE: avoid broad [class*="toolbar"] which can match the canvas container.
+    // Hide the Figma UI (toolbars / sidebars) so the canvas area is maximised.
+    // Two approaches in parallel — keyboard shortcut + CSS injection — for reliability.
+    //   Ctrl+\ = toggle Hide UI in Figma Web (expands canvas to fill viewport)
+    await page.keyboard.press('Control+Backslash').catch(() => undefined);
+    await page.waitForTimeout(300);
+
+    // CSS fallback: also force-hide panels in case Ctrl+\ didn't fire.
     await page
       .addStyleTag({
         content: `
           [data-testid="left-panel"], [data-testid="right-panel"],
           [data-testid="canvas-toolbar"],
           [class*="figma-toolbar"], [class*="ToolbarPanel"],
+          [class*="navbar"], [class*="NavBar"],
           [class*="dialog"], [class*="modal"] {
             visibility: hidden !important;
           }
@@ -255,10 +263,11 @@ async function renderInner(opts: RenderOpts): Promise<RenderResult> {
       })
       .catch(() => undefined);
 
-    // Zoom to fit the selected node (Shift+0 = "Zoom to Fit Selection" in Figma).
-    await page.keyboard.press('Escape').catch(() => undefined); // close any lingering dialog
-    await page.waitForTimeout(300);
-    await page.keyboard.press('Shift+0').catch(() => undefined);
+    // Zoom to fit the *selected* node.
+    // Shift+1 = "Zoom to fit selection" in Figma — works because the URL's
+    // node-id param causes Figma to auto-select that frame on load.
+    // (Shift+0 = fit entire page, which zooms out when many frames are present.)
+    await page.keyboard.press('Shift+1').catch(() => undefined);
     await page.waitForTimeout(1500);
 
     // ── DOM snapshot to find W/H input selectors (dev-only) ─────────────────
@@ -392,6 +401,35 @@ async function dismissFigmaDialogs(page: Page): Promise<void> {
   // Fall back to Escape
   await page.keyboard.press('Escape').catch(() => undefined);
   await page.waitForTimeout(200);
+}
+
+/**
+ * Dismiss dialogs using ONLY button clicks — never Escape.
+ * Pressing Escape in Figma also deselects the current node, which would break
+ * the subsequent Shift+1 "zoom to selection" shortcut.
+ */
+async function dismissDialogsByClick(page: Page): Promise<void> {
+  const selectors = [
+    // "Use desktop app?" prompt
+    'button:has-text("続行")',
+    'button:has-text("Continue in browser")',
+    'button:has-text("Continue")',
+    'button:has-text("Skip")',
+    // Font prompt / missing font warning
+    'button:has-text("OK")',
+    'button:has-text("Got it")',
+    // Generic close / × buttons inside dialogs
+    '[role="dialog"] button[aria-label="Close"]',
+    '[role="dialog"] button[aria-label="閉じる"]',
+    '[role="alertdialog"] button',
+  ];
+  for (const sel of selectors) {
+    const btn = await page.$(sel).catch(() => null);
+    if (btn) {
+      await btn.click().catch(() => undefined);
+      await page.waitForTimeout(200);
+    }
+  }
 }
 
 async function waitForCanvas(page: Page) {
