@@ -14,9 +14,10 @@ import { nodeIdToUrlForm } from './url-parser.js';
 
 const limit = pLimit(2);
 
-let browser: Browser | null = null;
+// BrowserContext is a PersistentContext (launchPersistentContext) so there is
+// no separate Browser object — the context IS the browser in this mode.
 let contextPromise: Promise<BrowserContext> | null = null;
-let storageStatePath: string | null = null;
+let persistentContext: BrowserContext | null = null;
 
 export class RenderError extends Error {
   constructor(
@@ -33,64 +34,131 @@ export class RenderError extends Error {
   }
 }
 
-async function resolveStorageStatePath(): Promise<string> {
-  if (storageStatePath) return storageStatePath;
-  const fromEnv = env().FIGMA_STATE_JSON;
-  if (fromEnv) {
-    const decoded = Buffer.from(fromEnv, 'base64').toString('utf-8');
+/**
+ * Resolve the Chrome profile directory to use for Playwright.
+ *
+ * Priority:
+ *  1. FIGMA_STATE_JSON env var → decode base64 JSON to a temp file and use
+ *     it as storageState (deployment path: Fly.io secrets).
+ *  2. FIGMA_PROFILE_DIR env var → absolute path to a persistent profile dir.
+ *  3. Default: <FIGMA_STATE_PATH parent>/chrome-profile  (local dev path that
+ *     `login-figma.ts` creates when it runs `launchPersistentContext`).
+ *
+ * Returns { mode: 'profile', profileDir } | { mode: 'storageState', stateFile }.
+ */
+async function resolveProfile(): Promise<
+  | { mode: 'profile'; profileDir: string }
+  | { mode: 'storageState'; stateFile: string }
+> {
+  const { FIGMA_STATE_JSON, FIGMA_STATE_PATH, FIGMA_PROFILE_DIR } = env();
+
+  // --- Deployment path: base64-encoded storageState JSON in env var ---
+  if (FIGMA_STATE_JSON) {
+    const decoded = Buffer.from(FIGMA_STATE_JSON, 'base64').toString('utf-8');
     const tmpPath = path.join(os.tmpdir(), `figma-state-${process.pid}.json`);
     await fs.writeFile(tmpPath, decoded, { mode: 0o600 });
-    storageStatePath = tmpPath;
-  } else {
-    storageStatePath = env().FIGMA_STATE_PATH;
+    return { mode: 'storageState', stateFile: tmpPath };
+  }
+
+  // --- Explicit profile dir override ---
+  if (FIGMA_PROFILE_DIR) {
     try {
-      await fs.access(storageStatePath);
+      await fs.access(FIGMA_PROFILE_DIR);
+      return { mode: 'profile', profileDir: FIGMA_PROFILE_DIR };
     } catch {
       throw new RenderError(
         'figma_unauthenticated',
-        `Figma storageState file not found at ${storageStatePath}. Run \`pnpm login-figma\`.`,
+        `FIGMA_PROFILE_DIR not found: ${FIGMA_PROFILE_DIR}. Run \`pnpm login-figma\`.`,
       );
     }
   }
-  return storageStatePath;
+
+  // --- Local dev: use chrome-profile next to figma.json ---
+  const stateDir = path.dirname(path.resolve(FIGMA_STATE_PATH));
+  const profileDir = path.join(stateDir, 'chrome-profile');
+  try {
+    await fs.access(profileDir);
+    return { mode: 'profile', profileDir };
+  } catch {
+    // Fall back to storageState (figma.json) if chrome-profile doesn't exist
+    try {
+      await fs.access(FIGMA_STATE_PATH);
+      log.warn('render.fallback_to_storage_state', {
+        reason: 'chrome-profile not found; using figma.json storageState',
+        profileDir,
+        stateFile: FIGMA_STATE_PATH,
+      });
+      return { mode: 'storageState', stateFile: FIGMA_STATE_PATH };
+    } catch {
+      throw new RenderError(
+        'figma_unauthenticated',
+        `Neither chrome-profile nor figma.json found in ${stateDir}. Run \`pnpm login-figma\`.`,
+      );
+    }
+  }
 }
+
+const COMMON_CONTEXT_OPTS = {
+  viewport: { width: 1920, height: 1080 } as const,
+  deviceScaleFactor: 2,
+  // Spoof a real non-headless Chrome UA to bypass bot detection
+  userAgent:
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.7778.178 Safari/537.36',
+  locale: 'ja-JP',
+};
+
+const COMMON_LAUNCH_ARGS = [
+  '--disable-dev-shm-usage',
+  '--no-sandbox',
+  '--disable-blink-features=AutomationControlled',
+];
 
 async function getContext(): Promise<BrowserContext> {
   if (contextPromise) return contextPromise;
   contextPromise = (async () => {
-    const stateFile = await resolveStorageStatePath();
-    browser = await chromium.launch({
-      headless: true,
-      channel: 'chrome', // use system Chrome (avoids separate playwright chromium download)
-      // ignoreDefaultArgs removes --enable-automation which triggers CloudFront bot detection
-      ignoreDefaultArgs: ['--enable-automation'],
-      args: [
-        '--disable-dev-shm-usage',
-        '--no-sandbox',
-        '--disable-blink-features=AutomationControlled',
-      ],
-    });
-    const context = await browser.newContext({
-      storageState: stateFile,
-      viewport: { width: 1920, height: 1080 },
-      deviceScaleFactor: 2,
-      // Spoof a real non-headless Chrome UA to bypass CloudFront bot detection
-      userAgent:
-        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.7778.178 Safari/537.36',
-      locale: 'ja-JP',
-    });
+    const profile = await resolveProfile();
+
+    let context: BrowserContext;
+    if (profile.mode === 'profile') {
+      // Use the same persistent Chrome profile that login-figma.ts created.
+      // This carries Google OAuth cookies and all Figma session state faithfully.
+      log.info('render.context_init', { mode: 'persistent_profile', profileDir: profile.profileDir });
+      context = await chromium.launchPersistentContext(profile.profileDir, {
+        headless: true,
+        channel: 'chrome',
+        ignoreDefaultArgs: ['--enable-automation'],
+        args: COMMON_LAUNCH_ARGS,
+        ...COMMON_CONTEXT_OPTS,
+      });
+    } else {
+      // Deployment path: storageState JSON
+      log.info('render.context_init', { mode: 'storage_state', stateFile: profile.stateFile });
+      const browser = await chromium.launch({
+        headless: true,
+        channel: 'chrome',
+        ignoreDefaultArgs: ['--enable-automation'],
+        args: COMMON_LAUNCH_ARGS,
+      });
+      context = await browser.newContext({
+        storageState: profile.stateFile,
+        ...COMMON_CONTEXT_OPTS,
+      });
+    }
+
     // Remove webdriver flag that automation-detection scripts check
     await context.addInitScript(() => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       Object.defineProperty((globalThis as any).navigator, 'webdriver', { get: () => undefined });
     });
+
+    persistentContext = context;
     return context;
   })();
   return contextPromise;
 }
 
 export async function isBrowserReady(): Promise<boolean> {
-  return browser !== null && browser.isConnected();
+  return persistentContext !== null && persistentContext.browser()?.isConnected() !== false;
 }
 
 export interface RenderOpts {
@@ -118,16 +186,37 @@ async function renderInner(opts: RenderOpts): Promise<RenderResult> {
   try {
     await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60_000 });
 
-    // Wait for either login redirect or canvas
+    // Brief pause to let redirects settle
+    await page.waitForTimeout(2000);
+
+    // Check for login redirect (includes ?login_at= query param Figma adds)
     if (page.url().includes('/login') || page.url().includes('?login_at=')) {
       throw new RenderError('figma_unauthenticated', 'redirected to login');
     }
 
+    log.debug('render.page_after_nav', { url: page.url() });
+
     // Dismiss "Use desktop app / font" dialog if it appears (Escape or ✕ button)
     await dismissFigmaDialogs(page);
 
+    // Debug: capture what's visible right after navigation
+    if (process.env.RENDER_DEBUG === '1') {
+      const debugBytes = await page.screenshot({ type: 'png', fullPage: false }).catch(() => null);
+      if (debugBytes) {
+        require('fs').writeFileSync('/tmp/figma-render-debug.png', debugBytes);
+        log.warn('render.debug_screenshot', { path: '/tmp/figma-render-debug.png' });
+      }
+    }
+
     const canvas = await waitForCanvas(page);
     if (!canvas) {
+      // Try to capture a debug screenshot for diagnostics even without RENDER_DEBUG
+      const debugBytes = await page.screenshot({ type: 'png', fullPage: false }).catch(() => null);
+      if (debugBytes) {
+        const { writeFileSync } = await import('node:fs');
+        writeFileSync('/tmp/figma-render-timeout-debug.png', debugBytes);
+        log.warn('render.timeout_debug_screenshot', { path: '/tmp/figma-render-timeout-debug.png', currentUrl: page.url() });
+      }
       throw new RenderError('playwright_timeout', 'canvas did not appear in time');
     }
 
@@ -135,11 +224,13 @@ async function renderInner(opts: RenderOpts): Promise<RenderResult> {
     await dismissFigmaDialogs(page);
 
     // Hide side panels and toolbar for a cleaner shot.
+    // NOTE: avoid broad [class*="toolbar"] which can match the canvas container.
     await page
       .addStyleTag({
         content: `
           [data-testid="left-panel"], [data-testid="right-panel"],
-          [data-testid="canvas-toolbar"], [class*="toolbar"],
+          [data-testid="canvas-toolbar"],
+          [class*="figma-toolbar"], [class*="ToolbarPanel"],
           [class*="dialog"], [class*="modal"] {
             visibility: hidden !important;
           }
@@ -147,34 +238,42 @@ async function renderInner(opts: RenderOpts): Promise<RenderResult> {
       })
       .catch(() => undefined);
 
-    // Zoom to selection (URL with node-id pre-selects the node).
+    // Zoom to fit the selected node (Shift+0 = "Zoom to Fit Selection" in Figma).
     await page.keyboard.press('Escape').catch(() => undefined); // close any lingering dialog
     await page.waitForTimeout(300);
-    await page.keyboard.press('Shift+1').catch(() => undefined);
-    await page.waitForTimeout(1000);
+    await page.keyboard.press('Shift+0').catch(() => undefined);
+    await page.waitForTimeout(1500);
 
-    const box = await canvas.boundingBox();
-    if (!box) throw new RenderError('figma_render_failed', 'canvas bounding box not available');
+    // getBoundingClientRect() in-page is more reliable than Playwright's
+    // boundingBox() for canvas elements that are sized via CSS transforms.
+    // We pick the largest canvas on the page (= Figma design surface).
+    const clip = await getCanvasClip(page);
 
+    const vp = page.viewportSize()!;
     const bytes = await page.screenshot({
       type: 'png',
-      clip: { x: box.x, y: box.y, width: box.width, height: box.height },
+      // If canvas rect is valid use it; otherwise fall back to full viewport
+      clip: clip ?? { x: 0, y: 0, width: vp.width, height: vp.height },
       timeout: 15_000,
     });
+
+    const width = clip?.width ?? vp.width;
+    const height = clip?.height ?? vp.height;
 
     log.info('render.completed', {
       fileKey: opts.fileKey,
       nodeId: opts.nodeId,
       durationMs: Date.now() - t0,
-      width: box.width,
-      height: box.height,
+      width,
+      height,
+      clipSource: clip ? 'canvas' : 'viewport_fallback',
     });
 
     return {
       bytes,
       mimeType: 'image/png',
-      width: Math.round(box.width),
-      height: Math.round(box.height),
+      width: Math.round(width),
+      height: Math.round(height),
     };
   } catch (err) {
     if (err instanceof RenderError) throw err;
@@ -203,15 +302,49 @@ async function dismissFigmaDialogs(page: Page): Promise<void> {
 }
 
 async function waitForCanvas(page: Page) {
-  // Wait up to 20 s for any canvas; Figma's canvas has no stable data-testid in all versions
-  const el = await page.waitForSelector('canvas', { timeout: 20_000 }).catch(() => null);
+  // Wait up to 30 s for any canvas; Figma's canvas has no stable data-testid in all versions
+  const el = await page.waitForSelector('canvas', { timeout: 30_000 }).catch(() => null);
   return el;
+}
+
+/**
+ * Evaluate getBoundingClientRect() inside the page for the largest canvas element.
+ * This is more reliable than Playwright's boundingBox() for elements sized via
+ * CSS transforms or WebGL contexts (as Figma uses).
+ * Falls back to viewport rect if no large canvas is found after 15 retries.
+ */
+async function getCanvasClip(
+  page: Page,
+): Promise<{ x: number; y: number; width: number; height: number } | null> {
+  for (let attempt = 0; attempt < 15; attempt++) {
+    const rect = await page
+      .evaluate(() => {
+        const canvases = Array.from(document.querySelectorAll('canvas'));
+        let best: { x: number; y: number; width: number; height: number } | null = null;
+        let bestArea = 0;
+        for (const c of canvases) {
+          const r = c.getBoundingClientRect();
+          const area = r.width * r.height;
+          if (area > bestArea) {
+            bestArea = area;
+            best = { x: r.x, y: r.y, width: r.width, height: r.height };
+          }
+        }
+        // Only return if the canvas has meaningful size (> 200x200 px)
+        return best && best.width > 200 && best.height > 200 ? best : null;
+      })
+      .catch(() => null);
+
+    if (rect) return rect;
+    await page.waitForTimeout(1000);
+  }
+  return null; // caller will use viewport fallback
 }
 
 export async function shutdown(): Promise<void> {
   contextPromise = null;
-  if (browser) {
-    await browser.close().catch(() => undefined);
-    browser = null;
+  if (persistentContext) {
+    await persistentContext.close().catch(() => undefined);
+    persistentContext = null;
   }
 }

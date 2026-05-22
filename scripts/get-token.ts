@@ -6,7 +6,10 @@
 //
 // Then paste the printed token into the FIGMA_MCP_TOKEN env var.
 
+import { config } from 'dotenv';
 import { createClient } from '@supabase/supabase-js';
+
+config(); // Load .env from repo root (CWD when running pnpm get-token)
 
 async function main(): Promise<void> {
   const url = process.env.SUPABASE_URL;

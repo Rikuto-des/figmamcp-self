@@ -160,19 +160,22 @@ export async function renderForUser(input: RenderForUserInput): Promise<RenderRe
       fileVersion = meta.lastModified;
     } catch (e) {
       const isPatScopeErr = e instanceof FigmaApiError && e.code === 'figma_node_not_found';
+      const isUnauthorizedErr = e instanceof FigmaApiError && e.code === 'unauthorized';
       const isTimeoutErr = e instanceof Error && e.message === 'figma_rest_timeout';
       const isRateLimitErr =
         e instanceof FigmaApiError && e.code === 'internal_error' && /rate/i.test(e.message);
-      if (isPatScopeErr || isTimeoutErr || isRateLimitErr) {
+      if (isPatScopeErr || isUnauthorizedErr || isTimeoutErr || isRateLimitErr) {
         fileVersion = `no-rest-${new Date().toISOString().slice(0, 10)}`;
         log.warn('render.figma_rest_unavailable_fallback', {
           fileKey,
           fallback: fileVersion,
           reason: isPatScopeErr
             ? 'PAT 範囲外'
-            : isTimeoutErr
-              ? 'REST 10s タイムアウト'
-              : 'REST レート制限',
+            : isUnauthorizedErr
+              ? 'REST 403 (PAT 未設定 or 権限なし)'
+              : isTimeoutErr
+                ? 'REST 10s タイムアウト'
+                : 'REST レート制限',
         });
       } else {
         throw e;

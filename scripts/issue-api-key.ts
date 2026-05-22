@@ -7,7 +7,10 @@
 // Env: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
 
 import { createHash, randomBytes } from 'node:crypto';
+import { config } from 'dotenv';
 import { createClient } from '@supabase/supabase-js';
+
+config(); // Load .env from repo root (CWD when running pnpm issue-api-key)
 
 interface Args {
   user: string;

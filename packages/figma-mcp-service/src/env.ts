@@ -1,3 +1,11 @@
+import { config } from 'dotenv';
+import { resolve } from 'path';
+
+// Load .env from monorepo root (two dirs up from packages/figma-mcp-service).
+// In production (Fly.io / Docker) env vars are injected directly via secrets,
+// so config() silently no-ops when the file is absent.
+config({ path: resolve(process.cwd(), '../../.env') });
+
 import { z } from 'zod';
 
 const EnvSchema = z.object({
@@ -10,6 +18,8 @@ const EnvSchema = z.object({
   LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
   FIGMA_STATE_PATH: z.string().default('.playwright-state/figma.json'),
   FIGMA_STATE_JSON: z.string().optional(),
+  // Override for persistent Chrome profile dir (default: auto-detected from FIGMA_STATE_PATH)
+  FIGMA_PROFILE_DIR: z.string().optional(),
 });
 
 export type Env = z.infer<typeof EnvSchema>;
