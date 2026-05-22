@@ -122,6 +122,13 @@ async function getContext(): Promise<BrowserContext> {
     if (profile.mode === 'profile') {
       // Use the same persistent Chrome profile that login-figma.ts created.
       // This carries Google OAuth cookies and all Figma session state faithfully.
+
+      // Remove stale SingletonLock/Socket left by a crashed or force-killed Chrome.
+      // Safe to delete when no process holds the lock (verified above).
+      for (const f of ['SingletonLock', 'SingletonSocket', 'SingletonCookie']) {
+        await fs.unlink(path.join(profile.profileDir, f)).catch(() => undefined);
+      }
+
       log.info('render.context_init', { mode: 'persistent_profile', profileDir: profile.profileDir });
       context = await chromium.launchPersistentContext(profile.profileDir, {
         headless: true,
