@@ -98,14 +98,19 @@ async function resolveProfile(): Promise<
   }
 }
 
-const COMMON_CONTEXT_OPTS = {
-  viewport: { width: 1920, height: 1080 } as const,
-  deviceScaleFactor: 2,
-  // Spoof a real non-headless Chrome UA to bypass bot detection
-  userAgent:
-    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.7778.178 Safari/537.36',
-  locale: 'ja-JP',
-};
+// Map user-facing scale (1|2|3) → deviceScaleFactor for Playwright context.
+// scale:1 → 2× (Retina), scale:2 → 2×, scale:3 → 3×
+const SCALE_TO_DSF: Record<number, number> = { 1: 2, 2: 2, 3: 3 };
+
+function contextOpts(deviceScaleFactor: number) {
+  return {
+    viewport: { width: 1920, height: 1080 } as const,
+    deviceScaleFactor,
+    userAgent:
+      'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.7778.178 Safari/537.36',
+    locale: 'ja-JP',
+  };
+}
 
 const COMMON_LAUNCH_ARGS = [
   '--disable-dev-shm-usage',
@@ -113,9 +118,12 @@ const COMMON_LAUNCH_ARGS = [
   '--disable-blink-features=AutomationControlled',
 ];
 
-async function getContext(): Promise<BrowserContext> {
-  if (contextPromise) return contextPromise;
-  contextPromise = (async () => {
+// Cache one context per deviceScaleFactor (usually only one scale used at a time)
+const contextPromises = new Map<number, Promise<BrowserContext>>();
+
+async function getContext(dsf: number): Promise<BrowserContext> {
+  if (contextPromises.has(dsf)) return contextPromises.get(dsf)!;
+  const p = (async () => {
     const profile = await resolveProfile();
 
     let context: BrowserContext;
@@ -129,17 +137,17 @@ async function getContext(): Promise<BrowserContext> {
         await fs.unlink(path.join(profile.profileDir, f)).catch(() => undefined);
       }
 
-      log.info('render.context_init', { mode: 'persistent_profile', profileDir: profile.profileDir });
+      log.info('render.context_init', { mode: 'persistent_profile', profileDir: profile.profileDir, dsf });
       context = await chromium.launchPersistentContext(profile.profileDir, {
         headless: true,
         channel: 'chrome',
         ignoreDefaultArgs: ['--enable-automation'],
         args: COMMON_LAUNCH_ARGS,
-        ...COMMON_CONTEXT_OPTS,
+        ...contextOpts(dsf),
       });
     } else {
       // Deployment path: storageState JSON
-      log.info('render.context_init', { mode: 'storage_state', stateFile: profile.stateFile });
+      log.info('render.context_init', { mode: 'storage_state', stateFile: profile.stateFile, dsf });
       const browser = await chromium.launch({
         headless: true,
         channel: 'chrome',
@@ -148,7 +156,7 @@ async function getContext(): Promise<BrowserContext> {
       });
       context = await browser.newContext({
         storageState: profile.stateFile,
-        ...COMMON_CONTEXT_OPTS,
+        ...contextOpts(dsf),
       });
     }
 
@@ -161,7 +169,8 @@ async function getContext(): Promise<BrowserContext> {
     persistentContext = context;
     return context;
   })();
-  return contextPromise;
+  contextPromises.set(dsf, p);
+  return p;
 }
 
 export async function isBrowserReady(): Promise<boolean> {
@@ -187,7 +196,8 @@ export async function renderNode(opts: RenderOpts): Promise<RenderResult> {
 
 async function renderInner(opts: RenderOpts): Promise<RenderResult> {
   const url = `https://www.figma.com/design/${opts.fileKey}/_?node-id=${nodeIdToUrlForm(opts.nodeId)}`;
-  const context = await getContext();
+  const dsf = SCALE_TO_DSF[opts.scale] ?? 2;
+  const context = await getContext(dsf);
   const page = await context.newPage();
   const t0 = Date.now();
   try {
@@ -349,7 +359,7 @@ async function getCanvasClip(
 }
 
 export async function shutdown(): Promise<void> {
-  contextPromise = null;
+  contextPromises.clear();
   if (persistentContext) {
     await persistentContext.close().catch(() => undefined);
     persistentContext = null;
