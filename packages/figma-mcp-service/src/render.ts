@@ -220,8 +220,9 @@ async function renderInner(opts: RenderOpts): Promise<RenderResult> {
     if (process.env.RENDER_DEBUG === '1') {
       const debugBytes = await page.screenshot({ type: 'png', fullPage: false }).catch(() => null);
       if (debugBytes) {
-        require('fs').writeFileSync('/tmp/figma-render-debug.png', debugBytes);
-        log.warn('render.debug_screenshot', { path: '/tmp/figma-render-debug.png' });
+        const { writeFileSync: wfs } = await import('node:fs');
+        wfs('/tmp/figma-render-debug-nav.png', debugBytes);
+        log.warn('render.debug_screenshot_nav', { path: '/tmp/figma-render-debug-nav.png' });
       }
     }
 
@@ -239,9 +240,15 @@ async function renderInner(opts: RenderOpts): Promise<RenderResult> {
 
     // Dismiss any remaining dialogs after canvas appears.
     // Use click-only variant — Escape would deselect the auto-selected node
-    // (from node-id in the URL), breaking Shift+1 "zoom to selection" below.
+    // (from node-id in the URL), breaking Shift+2 "zoom to selection" below.
     await dismissDialogsByClick(page);
-    await page.waitForTimeout(500);
+
+    // Extra wait for Figma to fully initialize the design and register the node
+    // selection from the URL's ?node-id= parameter. The canvas element appears
+    // before the selection state is fully committed; skimping here causes Shift+2
+    // to zoom to "nothing selected" → shows the whole page instead of the node.
+    await page.waitForTimeout(3000);
+    log.info('render.canvas_ready', { fileKey: opts.fileKey, nodeId: opts.nodeId });
 
     // Move mouse to viewport center to give hover focus.
     // hover (no click) = no selection change; mouse presence activates
@@ -251,7 +258,6 @@ async function renderInner(opts: RenderOpts): Promise<RenderResult> {
 
     // Ensure the page (not the browser chrome) has OS-level keyboard focus.
     await page.bringToFront();
-    await page.evaluate(() => { try { (document.activeElement as HTMLElement)?.blur(); } catch {} });
     await page.waitForTimeout(200);
 
     // ── Step 1: Zoom to fit the selected node ────────────────────────────────
@@ -263,26 +269,194 @@ async function renderInner(opts: RenderOpts): Promise<RenderResult> {
     //
     // IMPORTANT: do this BEFORE hiding the UI — Figma's keyboard handler is
     // fully active while the normal interface is visible.
+    log.info('render.zoom_to_selection', { shortcut: 'Shift+2' });
     await page.keyboard.press('Shift+2').catch(() => undefined);
-    await page.waitForTimeout(1800); // wait for zoom animation
+    await page.waitForTimeout(2000); // wait for zoom animation to complete
 
-    // ── Step 2: Hide Figma UI using Figma's own shortcut ────────────────────
-    // Mac: Cmd+\ (Meta+\) toggles all panels/toolbars off → clean canvas view.
-    // More reliable than CSS injection because Figma manages its own state
-    // and also hides selection handles/overlays as part of the toggle.
+    if (process.env.RENDER_DEBUG === '1') {
+      const { writeFileSync: wfs } = await import('node:fs');
+      const b = await page.screenshot({ type: 'png' }).catch(() => null);
+      if (b) { wfs('/tmp/figma-debug-after-shift2.png', b); log.warn('render.debug_after_shift2', { path: '/tmp/figma-debug-after-shift2.png', url: page.url() }); }
+    }
+
+    // ── Step 2: Hide Figma UI chrome ─────────────────────────────────────────
+    // Strategy A: keyboard shortcuts
+    //   Meta+\ = Cmd+\ on Mac (hides left/right panels in Figma)
+    //   Control+\ = Ctrl+\ (also tried for completeness)
+    log.info('render.hide_ui_start');
     await page.keyboard.press('Meta+\\').catch(() => undefined);
-    await page.waitForTimeout(600);
+    await page.waitForTimeout(400);
+    await page.keyboard.press('Control+\\').catch(() => undefined);
+    await page.waitForTimeout(400);
 
-    // ── Step 3: Deselect to remove any remaining selection highlight ─────────
-    // Esc is safe here: we've already zoomed, and Meta+\ hides most overlays,
-    // but Esc ensures we're in the neutral "nothing selected" state.
+    // Strategy B: JavaScript-based hiding.
+    //
+    // Figma obfuscates its CSS class names (e.g. "left_panel_container--sizeContainer--Lqb7I"),
+    // so CSS class-name selectors are unreliable. Instead we:
+    //   1. Use document.elementsFromPoint() to probe what's RENDERED at the top/bottom
+    //      edge of the screen and hide those elements.
+    //   2. Hide the known left-panel by its stable ID.
+    //   3. Hide any element that is position:fixed (overlay panels, floating toolbars).
+    //
+    // Note: We operate on VISIBILITY (not display) so layout is preserved and the
+    // zoom from Shift+2 is not disturbed.
+    const hideResult = await page.evaluate(() => {
+      const hidden: string[] = [];
+
+      // ── Helper: hide an element and record it ──────────────────────────────
+      function hideEl(el: Element, reason: string) {
+        if (el === document.documentElement || el === document.body) return;
+        if (el.tagName === 'CANVAS') return; // never hide the design canvas
+        (el as HTMLElement).style.setProperty('visibility', 'hidden', 'important');
+        hidden.push(`${reason}:${el.tagName}#${el.id.slice(0,20)}.${(el as HTMLElement).className.slice(0,40)}`);
+      }
+
+      // ── 1. Probe elements at top edge (y = 1 and y = 30) ──────────────────
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+      for (const probeY of [1, 20, 35]) {
+        for (const el of document.elementsFromPoint(vw / 2, probeY)) {
+          const r = (el as HTMLElement).getBoundingClientRect();
+          // Only hide thin bar-like elements (toolbar height 20–80px) near the top
+          if (r.height > 10 && r.height < 100 && r.top >= -5 && r.top <= 10) {
+            hideEl(el, `top-probe-y${probeY}`);
+          }
+        }
+      }
+
+      // ── 2. Probe elements at bottom edge ──────────────────────────────────
+      for (const probeY of [vh - 1, vh - 25, vh - 40]) {
+        for (const el of document.elementsFromPoint(vw / 2, probeY)) {
+          const r = (el as HTMLElement).getBoundingClientRect();
+          if (r.height > 10 && r.height < 100 && r.bottom <= vh + 5 && r.bottom >= vh - 100) {
+            hideEl(el, `bottom-probe-y${probeY}`);
+          }
+        }
+      }
+
+      // ── 3. Hide left panel by stable ID ───────────────────────────────────
+      const leftPanel = document.getElementById('left-panel-container');
+      if (leftPanel) hideEl(leftPanel, 'left-panel-id');
+
+      // ── 4. Hide right panel (probe x = vw - 10) ───────────────────────────
+      for (const el of document.elementsFromPoint(vw - 10, vh / 2)) {
+        const r = (el as HTMLElement).getBoundingClientRect();
+        if (r.width > 50 && r.width < 400 && r.right >= vw - 10) {
+          hideEl(el, 'right-panel-probe');
+        }
+      }
+
+      // ── 5. Hide ALL position:fixed elements (floating panels, menus) ───────
+      for (const el of Array.from(document.querySelectorAll('*'))) {
+        if (el.tagName === 'CANVAS') continue;
+        const style = window.getComputedStyle(el);
+        if (style.position === 'fixed') {
+          const r = (el as HTMLElement).getBoundingClientRect();
+          if (r.width > 50 && r.height > 10) {
+            hideEl(el, 'fixed-pos');
+          }
+        }
+      }
+
+      return { hiddenCount: hidden.length, items: hidden.slice(0, 20) };
+    }).catch(() => ({ hiddenCount: 0, items: [] }));
+
+    log.info('render.hide_ui_done', {
+      hiddenCount: hideResult.hiddenCount,
+      items: hideResult.items,
+    });
+    await page.waitForTimeout(300);
+
+    if (process.env.RENDER_DEBUG === '1') {
+      const { writeFileSync: wfs } = await import('node:fs');
+      const b = await page.screenshot({ type: 'png' }).catch(() => null);
+      if (b) { wfs('/tmp/figma-debug-after-hide.png', b); log.warn('render.debug_after_hide', { path: '/tmp/figma-debug-after-hide.png' }); }
+
+      // DOM structure inspection
+      const domInfo = await page.evaluate(() => {
+        const canvases = Array.from(document.querySelectorAll('canvas'));
+        const largest = canvases.reduce<HTMLCanvasElement | null>((best, c) => {
+          const r = c.getBoundingClientRect();
+          const area = r.width * r.height;
+          const bestArea = best ? (() => { const b2 = best.getBoundingClientRect(); return b2.width * b2.height; })() : 0;
+          return area > bestArea ? c : best;
+        }, null);
+        const canvasRect = largest ? largest.getBoundingClientRect() : null;
+
+        const vw = window.innerWidth;
+        const vh = window.innerHeight;
+
+        // Probe top edge — find what's visually rendered at top of screen
+        // (width > 100 to avoid tiny icon elements)
+        const topBars = Array.from(document.querySelectorAll('*'))
+          .filter(el => {
+            const r = (el as HTMLElement).getBoundingClientRect();
+            // Use a broad filter: any element near the top with meaningful width
+            return r.top >= -5 && r.top < 60 && r.height > 10 && r.height < 120 && r.width > 100;
+          })
+          .slice(0, 15)
+          .map(el => ({
+            tag: el.tagName,
+            id: el.id.slice(0, 40),
+            cls: (el as HTMLElement).className.slice(0, 80),
+            rect: (el as HTMLElement).getBoundingClientRect(),
+            vis: window.getComputedStyle(el).visibility,
+          }));
+
+        // Probe bottom edge
+        const bottomBars = Array.from(document.querySelectorAll('*'))
+          .filter(el => {
+            const r = (el as HTMLElement).getBoundingClientRect();
+            return r.bottom > vh - 80 && r.bottom <= vh + 5 && r.height > 10 && r.height < 100 && r.width > 100;
+          })
+          .slice(0, 10)
+          .map(el => ({
+            tag: el.tagName,
+            id: el.id.slice(0, 40),
+            cls: (el as HTMLElement).className.slice(0, 80),
+            rect: (el as HTMLElement).getBoundingClientRect(),
+            vis: window.getComputedStyle(el).visibility,
+          }));
+
+        // elementsFromPoint at exact corners / edges
+        const probePoints = [
+          { label: 'top-center', x: vw/2, y: 5 },
+          { label: 'top-left',   x: 50,   y: 5 },
+          { label: 'bot-center', x: vw/2, y: vh - 5 },
+          { label: 'left-mid',   x: 10,   y: vh/2 },
+        ];
+        const probeResults = probePoints.map(pt => ({
+          ...pt,
+          elements: document.elementsFromPoint(pt.x, pt.y)
+            .slice(0, 4)
+            .map(el => ({
+              tag: el.tagName,
+              id: el.id.slice(0,20),
+              vis: window.getComputedStyle(el).visibility,
+              rect: (el as HTMLElement).getBoundingClientRect(),
+            })),
+        }));
+
+        return { canvasRect, topBars, bottomBars, probeResults, vw, vh };
+      }).catch(() => null);
+      log.warn('render.dom_info', domInfo ?? { error: 'eval failed' });
+    }
+
+    // ── Step 3: Deselect to remove selection highlight ───────────────────────
     await page.keyboard.press('Escape').catch(() => undefined);
     await page.waitForTimeout(400);
+
+    if (process.env.RENDER_DEBUG === '1') {
+      const { writeFileSync: wfs } = await import('node:fs');
+      const b = await page.screenshot({ type: 'png' }).catch(() => null);
+      if (b) { wfs('/tmp/figma-debug-after-esc.png', b); log.warn('render.debug_after_esc', { path: '/tmp/figma-debug-after-esc.png' }); }
+    }
 
     // getBoundingClientRect() in-page is more reliable than Playwright's
     // boundingBox() for canvas elements that are sized via CSS transforms.
     // We pick the largest canvas on the page (= Figma design surface).
     const clip = await getCanvasClip(page);
+    log.info('render.canvas_clip', { clip });
 
     const vp = page.viewportSize()!;
     const bytes = await page.screenshot({
@@ -302,6 +476,7 @@ async function renderInner(opts: RenderOpts): Promise<RenderResult> {
       width,
       height,
       clipSource: clip ? 'canvas' : 'viewport_fallback',
+      hiddenElements: hideResult.hiddenCount,
     });
 
     return {

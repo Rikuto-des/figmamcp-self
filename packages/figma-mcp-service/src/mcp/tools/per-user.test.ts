@@ -11,6 +11,12 @@ vi.mock('../../supabase.js', () => {
     appendAuditLog: vi.fn(async (args: unknown) => {
       calls.push({ fn: 'appendAuditLog', args: [args] });
     }),
+    // fast-path lookup (render-service line 106: findLatestAsset)
+    findLatestAsset: vi.fn(async (args: unknown) => {
+      calls.push({ fn: 'findLatestAsset', args: [args] });
+      return null; // always miss → falls through to Playwright render path
+    }),
+    // cache-key lookup (render-service line 194: findCachedAsset)
     findCachedAsset: vi.fn(async (args: unknown) => {
       calls.push({ fn: 'findCachedAsset', args: [args] });
       return null;
@@ -71,14 +77,15 @@ beforeEach(() => {
 });
 
 describe('per-user isolation', () => {
-  it('always passes userId to findCachedAsset', async () => {
+  it('always passes userId to findLatestAsset (fast-path cache lookup)', async () => {
     await renderForUser({
       userId: 'user-A',
       figmaUrl: 'https://www.figma.com/design/abc/F?node-id=1-2',
     });
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const calls = (supabaseMock as any).__calls as Array<{ fn: string; args: any[] }>;
-    const lookup = calls.find((c) => c.fn === 'findCachedAsset');
+    // render-service calls findLatestAsset first (fast path, by fileKey/nodeId/userId)
+    const lookup = calls.find((c) => c.fn === 'findLatestAsset');
     expect(lookup).toBeDefined();
     expect(lookup!.args[0].userId).toBe('user-A');
   });
@@ -90,7 +97,7 @@ describe('per-user isolation', () => {
     });
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const calls = (supabaseMock as any).__calls as Array<{ fn: string; args: any[] }>;
-    const lookup = calls.find((c) => c.fn === 'findCachedAsset');
+    const lookup = calls.find((c) => c.fn === 'findLatestAsset');
     expect(lookup!.args[0].userId).toBe('user-B');
     expect(lookup!.args[0].userId).not.toBe('user-A');
   });
