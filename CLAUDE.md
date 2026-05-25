@@ -1,47 +1,65 @@
 # CLAUDE.md (Root)
 
-このリポジトリで作業する Claude Code 向けの簡易ガイド。**詳細は [docs/CLAUDE.md](./docs/CLAUDE.md) を必ず読むこと**。
+このリポジトリで作業する Claude Code 向けの簡易ガイド。
 
-## ディレクトリ構成 (Phase 7 完了状態)
+## ディレクトリ構成
 
 ```
 .
 ├── README.md                  # ユーザ向けセットアップ
-├── CLAUDE.md                  # ← ここ (簡易)
-├── docs/                      # 仕様書一式
-│   ├── README.md / ARCHITECTURE.md / IMPLEMENTATION_PLAN.md / CLAUDE.md
-│   ├── ACCEPTANCE_TESTS.md
-│   ├── specs/                 # supabase, renderer-worker, mcp-server, api-contracts, remote-mcp
-│   └── reference/             # figma-url-formats, figma-session-setup, env-vars
+├── CLAUDE.md                  # ← ここ
+├── docs/
+│   ├── explainer.html         # 中高生向け解説（自作前後の比較）
+│   ├── lt-slides.html         # 社外向け LT スライド
+│   └── ...                    # 旧仕様書（履歴的に参照）
 ├── packages/
-│   ├── shared/                # @figma-mcp-poc/shared (API 契約 / DB 型)
-│   └── figma-mcp-service/     # Hono + Playwright + MCP (HTTP/SSE)
-├── supabase/migrations/       # DB スキーマ (init + api_keys)
-├── scripts/
-│   ├── demo-tier-c-leak.sh    # /v1/images 公開 S3 漏洩確認
-│   ├── get-token.ts           # Supabase JWT 取得 (短寿命)
-│   └── issue-api-key.ts       # fmps_ 長寿命 API Key 発行
-├── .vscode/mcp.json           # MCP (HTTP) クライアント設定
-└── .devcontainer/devcontainer.json   # Codespaces 用 (Copilot + FIGMA_MCP_TOKEN secret)
+│   ├── shared/                # @figma-mcp-poc/shared (型のみ)
+│   └── figma-mcp/             # stdio MCP server + Playwright (一体)
+│       ├── src/
+│       │   ├── server.ts            # stdio エントリ
+│       │   ├── render.ts            # Playwright で Figma を撮る本体
+│       │   ├── cache.ts             # in-memory LRU
+│       │   ├── figma-rest.ts        # /v1/files/.../nodes (JSON のみ)
+│       │   ├── env.ts / logger.ts / url-parser.ts
+│       │   └── mcp/
+│       │       ├── index.ts
+│       │       └── tools/
+│       │           ├── get-screenshot.ts
+│       │           └── get-node-info.ts
+│       └── scripts/
+│           ├── login-figma.ts       # Figma 対話ログイン (永続)
+│           └── test-render-once.ts  # 単発レンダ確認
+├── .vscode/mcp.json           # stdio で packages/figma-mcp/dist/server.js を起動
+└── .devcontainer/             # Codespaces 用
 ```
 
 ## 主要コマンド
 
 ```bash
-pnpm install
-pnpm login-figma            # Figma 個人アカウントを Playwright で保存
-pnpm dev                    # figma-mcp-service を localhost:3000 で起動
-pnpm get-token              # 開発初期: Supabase JWT を出力
-pnpm issue-api-key --user <id> --label "..."   # 長寿命 fmps_ API Key を発行
-pnpm -r build               # 全パッケージビルド
-pnpm test                   # vitest (url-parser, per-user isolation)
+pnpm install                                                # 依存
+pnpm --filter figma-mcp exec playwright install chromium    # 初回のみ
+pnpm login-figma                                            # Figma 対話ログイン
+pnpm -r build                                               # 全ビルド
+pnpm dev                                                    # tsx でローカル起動 (デバッグ用)
+pnpm test                                                   # vitest (url-parser)
 ```
 
 ## 絶対のルール
 
-- `/v1/images` を呼ぶ実装を作らない (公開 S3 流出経路)
+- **`/v1/images` を呼ぶ実装を作らない**（公開 S3 漏洩経路 — このプロジェクトの存在理由）
+- **`console.log` を server コードで使わない**（stdout は MCP JSON-RPC 専用）
+  - ログは `logger.ts` 経由 → stderr へ
 - 認証情報・トークンをログ/コミットに含めない
-- `assets` / `audit_log` クエリで `created_by = ctx.userId` を必ず明示
-- mcp transport のセッション ID を別ユーザー間で共有しない (auth.ts でチェック済み)
+- `.env`、`.playwright-state/` は .gitignore 済み（コミット禁止）
 
-完全な規約とフェーズごとの進め方は [docs/CLAUDE.md](./docs/CLAUDE.md) と [docs/IMPLEMENTATION_PLAN.md](./docs/IMPLEMENTATION_PLAN.md)。
+## アーキテクチャ要点（v1.0 = embedded mode）
+
+- **stdio** MCP server。HTTP/SSE は無い
+- **シングルプロセス**。Supabase / Fly.io / 認証 / API キー は撤去済み
+- 画像は **Codespaces のメモリの中だけ**。外向き URL は一切作らない
+- キャッシュは **in-memory LRU**（最大 50 件、TTL 15 分）
+- Figma ログインは **Playwright `storageState` + persistent profile**
+
+## 旧アーキテクチャ（撤去済み）
+
+過去のリビジョンでは Hono HTTP + Supabase Storage + Fly.io デプロイ + 独自 API キー（fmps_）まで持っていました。1 ユーザーの Codespaces 完結で要件を満たせるため、Phase 7 → v1.0 で全部撤去。詳細は git 履歴。

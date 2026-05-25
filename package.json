@@ -1,6 +1,6 @@
 {
   "name": "figma-mcp-poc",
-  "version": "0.2.0",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
   "engines": {
@@ -9,18 +9,13 @@
   "packageManager": "pnpm@9.0.0",
   "scripts": {
     "build": "pnpm -r build",
-    "dev": "pnpm --filter figma-mcp-service dev",
-    "login-figma": "pnpm --filter figma-mcp-service exec tsx scripts/login-figma.ts",
-    "export-slides": "pnpm --filter figma-mcp-service exec tsx scripts/export-slides-pdf.ts",
-    "get-token": "tsx scripts/get-token.ts",
-    "issue-api-key": "tsx scripts/issue-api-key.ts",
+    "dev": "pnpm --filter figma-mcp dev",
+    "login-figma": "pnpm --filter figma-mcp exec tsx scripts/login-figma.ts",
     "test": "pnpm -r test",
     "format": "prettier --write ."
   },
   "devDependencies": {
-    "@supabase/supabase-js": "^2.45.0",
     "@types/node": "^20.11.0",
-    "dotenv": "^17.4.2",
     "prettier": "^3.2.0",
     "tsx": "^4.7.0",
     "typescript": "^5.4.0"

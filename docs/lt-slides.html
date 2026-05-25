@@ -422,7 +422,7 @@ html,body{width:100%;height:100%;background:#000;overflow:hidden;cursor:default}
   <div class="glow"></div>
   <div class="r" style="margin-bottom:4px">
     <span class="tag tag-y">Lightning Talk</span>
-    <span class="tag tag-g" style="margin-left:8px">Phase 7 完了</span>
+    <span class="tag tag-g" style="margin-left:8px">Codespaces 内完結 / MVP 動作中</span>
   </div>
   <div class="r">
     <div class="kicker" style="margin-top:24px;margin-bottom:0">社内向け Figma MCP</div>
@@ -434,10 +434,9 @@ html,body{width:100%;height:100%;background:#000;overflow:hidden;cursor:default}
   <div class="r" style="margin-top:48px;display:flex;justify-content:center;gap:14px;align-items:center">
     <span class="tag tag-b">TypeScript</span>
     <span class="tag tag-b">Playwright</span>
-    <span class="tag tag-b">Supabase</span>
     <span class="tag tag-b">MCP SDK</span>
-    <span class="tag tag-b">Hono</span>
-    <span class="tag tag-b">Fly.io</span>
+    <span class="tag tag-b">Node.js</span>
+    <span class="tag tag-b">Codespaces</span>
   </div>
 </section>
 
@@ -586,13 +585,13 @@ html,body{width:100%;height:100%;background:#000;overflow:hidden;cursor:default}
       <div class="compare-steps">
         <div class="cs-box"><div class="icon">🤖</div><div class="label">Copilot</div></div>
         <div class="cs-arrow safe"></div>
-        <div class="cs-box"><div class="icon">⚙️</div><div class="label">HTTP MCP</div><div class="sub">Hono server</div></div>
+        <div class="cs-box"><div class="icon">📮</div><div class="label">自作 MCP</div><div class="sub">stdio (同プロセス)</div></div>
         <div class="cs-arrow safe"></div>
         <div class="cs-box good-box"><div class="icon">🎭</div><div class="label">Playwright</div><div class="sub">Figma Webを撮影</div></div>
         <div class="cs-arrow safe"></div>
-        <div class="cs-box good-box"><div class="icon">🔒</div><div class="label">Supabase</div><div class="sub">プライベート保存</div></div>
+        <div class="cs-box good-box"><div class="icon">💻</div><div class="label">メモリ</div><div class="sub">Codespaces 内</div></div>
         <div class="cs-arrow safe"></div>
-        <div class="cs-box good-box"><div class="icon">✅</div><div class="label">base64 PNG</div><div class="sub">URL生成なし</div></div>
+        <div class="cs-box good-box"><div class="icon">✅</div><div class="label">base64 PNG</div><div class="sub">URL一切なし</div></div>
       </div>
     </div>
   </div>
@@ -621,16 +620,16 @@ html,body{width:100%;height:100%;background:#000;overflow:hidden;cursor:default}
     <div class="step-arrow"></div>
     <div class="step-box">
       <div class="step-num">2</div>
-      <div class="step-icon">🔐</div>
-      <div class="step-title">認証</div>
-      <div class="step-desc">JWT or fmps_ APIキー<br>でユーザー検証</div>
+      <div class="step-icon">📮</div>
+      <div class="step-title">MCP 起動</div>
+      <div class="step-desc">VS Code が stdio で<br>同プロセスを呼ぶ</div>
     </div>
     <div class="step-arrow"></div>
     <div class="step-box">
       <div class="step-num">3</div>
       <div class="step-icon">⚡</div>
       <div class="step-title">キャッシュ確認</div>
-      <div class="step-desc">同 URL+バージョンなら<br>即座に返却</div>
+      <div class="step-desc">同じ URL ならメモリから<br>即返却</div>
     </div>
     <div class="step-arrow"></div>
     <div class="step-box">
@@ -642,9 +641,9 @@ html,body{width:100%;height:100%;background:#000;overflow:hidden;cursor:default}
     <div class="step-arrow"></div>
     <div class="step-box">
       <div class="step-num">5</div>
-      <div class="step-icon">🔒</div>
-      <div class="step-title">Supabase 保存</div>
-      <div class="step-desc">プライベートバケット<br>に PNG を格納</div>
+      <div class="step-icon">💾</div>
+      <div class="step-title">メモリ保持</div>
+      <div class="step-desc">プロセス内 LRU に<br>PNG を保存（外に出ない）</div>
     </div>
     <div class="step-arrow"></div>
     <div class="step-box">
@@ -682,29 +681,29 @@ html,body{width:100%;height:100%;background:#000;overflow:hidden;cursor:default}
     <div class="pro-card" style="border-top-color:var(--green)">
       <div class="icon-wrap" style="background:rgba(0,232,122,.1)">🔒</div>
       <div>
-        <h3>公開URLが出ない</h3>
-        <p>/v1/images を叩かないので、画像はずっと Supabase の中。外向きの URL は一切発行されない。</p>
+        <h3>外に何も出ない</h3>
+        <p>/v1/images を叩かない。画像は Codespaces のメモリの中だけ。外向きの URL は一切発行されない。</p>
       </div>
     </div>
     <div class="pro-card" style="border-top-color:var(--blue)">
-      <div class="icon-wrap" style="background:rgba(56,182,255,.1)">👤</div>
+      <div class="icon-wrap" style="background:rgba(56,182,255,.1)">📦</div>
       <div>
-        <h3>ユーザーごとに分離</h3>
-        <p>Supabase の RLS で、A さんが取った画像を B さんからは引けない。誰のキャッシュかちゃんと分かれる。</p>
+        <h3>外部サービスゼロ</h3>
+        <p>Supabase も Fly.io も使わない。Codespaces 1 つあれば全部動く。月額コストもかからない。</p>
       </div>
     </div>
     <div class="pro-card" style="border-top-color:var(--yellow)">
-      <div class="icon-wrap" style="background:rgba(255,240,31,.1)">📋</div>
+      <div class="icon-wrap" style="background:rgba(255,240,31,.1)">⚙️</div>
       <div>
-        <h3>アクセスを全部記録</h3>
-        <p>誰がいつどのファイルを取ったか、audit_log に全部残る。あとから普通に追える。</p>
+        <h3>セットアップ 1 コマンド</h3>
+        <p>Codespace を起動するだけ。<code>postCreateCommand</code> が pnpm install + Playwright + build までやってくれる。</p>
       </div>
     </div>
     <div class="pro-card" style="border-top-color:var(--purple)">
       <div class="icon-wrap" style="background:rgba(192,132,252,.1)">⚡</div>
       <div>
         <h3>2回目以降は爆速</h3>
-        <p>同じ URL & 同じ Figma バージョンならキャッシュをそのまま返す。Codespaces からも API キー1本で使える。</p>
+        <p>同じ URL ならプロセス内 LRU キャッシュから即返却。ネットワーク往復ゼロなのでミリ秒で返ってくる。</p>
       </div>
     </div>
   </div>
@@ -729,8 +728,8 @@ html,body{width:100%;height:100%;background:#000;overflow:hidden;cursor:default}
     <div class="con-item">
       <span class="sev sev-m">MED</span>
       <div>
-        <h3>横にスケールできない</h3>
-        <p>Chrome のログイン状態をプロセス内に持ってるので、ノードを増やせない。Redis でセッション共有を入れるまでは 1 台運用前提。</p>
+        <h3>Codespace が壊れたら作り直し</h3>
+        <p>Figma ログイン情報も Playwright Chromium も Codespace のディスクにあるので、Codespace を削除したら全部やり直し。再ログインが要る。</p>
       </div>
     </div>
     <div class="con-item">
@@ -758,18 +757,18 @@ html,body{width:100%;height:100%;background:#000;overflow:hidden;cursor:default}
       <h3 style="color:var(--green)">やってみてわかったこと</h3>
       <ul class="check-list" style="list-style:none">
         <li><span class="ck">✓</span><span>公式 MCP を使わなくても AI のコード生成は回せた</span></li>
-        <li><span class="ck">✓</span><span>Playwright + Supabase で /v1/images は完全に回避</span></li>
-        <li><span class="ck">✓</span><span>RLS と監査ログで社内要件もだいたい通せる</span></li>
-        <li><span class="ck ck-y">⚡</span><span>リモート化と Fly.io デプロイまで一通り動いてる</span></li>
+        <li><span class="ck">✓</span><span>Playwright で自分で撮るだけで /v1/images は完全に回避</span></li>
+        <li><span class="ck">✓</span><span>外部サービス（Supabase / Fly.io）も結局いらなかった</span></li>
+        <li><span class="ck ck-y">⚡</span><span>Codespaces 内完結のシンプル MVP として動いてる</span></li>
       </ul>
     </div>
     <div class="sum-col">
       <h3 style="color:var(--yellow)">次にやりたいこと</h3>
       <ul class="next-list" style="list-style:none">
-        <li><span class="prio">🔥</span><span>Redis でセッションを外出しして横にスケール</span></li>
-        <li><span class="prio">🔥</span><span>Playwright を DOM 依存から離す</span></li>
-        <li><span class="prio">⚡</span><span>Okta / Azure AD と繋いで SSO 対応</span></li>
-        <li><span class="prio">⚡</span><span>API キーの前段に WAF を入れる</span></li>
+        <li><span class="prio">🔥</span><span>Playwright を DOM 依存から離して壊れにくく</span></li>
+        <li><span class="prio">🔥</span><span>Figma ログイン切れの自動リフレッシュ</span></li>
+        <li><span class="prio">⚡</span><span>キャッシュをディスクに永続化（Codespace 再起動後も残るように）</span></li>
+        <li><span class="prio">💡</span><span>ワンクリックで Codespace を立ち上げて使えるテンプレ化</span></li>
         <li><span class="prio">💡</span><span>Figma の差分を拾ってリアルタイム通知</span></li>
       </ul>
     </div>

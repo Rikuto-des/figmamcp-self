@@ -1,47 +1,9 @@
-// HTTP API contracts shared between renderer-worker and mcp-server.
-// See docs/specs/api-contracts.md for the full description.
+// Shared types. In embedded mode there are no HTTP contracts — these
+// just describe the shape of Figma node JSON returned from the
+// figma_get_node_info MCP tool, plus a couple of common enums.
 
 export type ImageFormat = 'png' | 'jpg';
 export type RenderScale = 1 | 2 | 3;
-export type Classification = 'internal' | 'confidential';
-export type Tier = 'A' | 'B' | 'C';
-export type RenderedVia = 'cache' | 'playwright';
-
-// ---------- /render ----------
-
-export interface RenderRequest {
-  figma_url?: string;
-  file_key?: string;
-  node_id?: string;
-  format?: ImageFormat;
-  scale?: RenderScale;
-  force_refresh?: boolean;
-  classification?: Classification;
-}
-
-export interface RenderResponse {
-  asset_id: string;
-  signed_url: string;
-  signed_url_expires_at: string;
-  cache_hit: boolean;
-  rendered_via: RenderedVia;
-  width: number;
-  height: number;
-  format: ImageFormat;
-  scale: RenderScale;
-  classification: Classification;
-  tier: Tier;
-  file_key: string;
-  node_id: string;
-}
-
-// ---------- /node-info ----------
-
-export interface NodeInfoRequest {
-  figma_url?: string;
-  file_key?: string;
-  node_id?: string;
-}
 
 export interface FigmaBoundingBox {
   x: number;
@@ -56,8 +18,8 @@ export interface FigmaNode {
   type: string;
   absoluteBoundingBox?: FigmaBoundingBox;
   children?: FigmaNode[];
-  // Figma API は他に fills / strokes / characters など多数返すため、
-  // pass-through を許容する。
+  // Figma API returns many extra fields (fills, strokes, characters, …)
+  // — allow pass-through so this type isn't an obstacle.
   [key: string]: unknown;
 }
 
@@ -67,30 +29,11 @@ export interface NodeInfoResponse {
   node: FigmaNode;
 }
 
-// ---------- /healthz ----------
-
-export interface HealthzResponse {
-  status: 'ok' | 'degraded';
-  browser_ready: boolean;
-  uptime_sec: number;
-  version: string;
-}
-
-// ---------- Errors ----------
-
 export type ErrorCode =
   | 'invalid_request'
   | 'unauthorized'
-  | 'forbidden'
   | 'figma_node_not_found'
   | 'figma_render_failed'
   | 'figma_unauthenticated'
   | 'playwright_timeout'
   | 'internal_error';
-
-export interface ErrorResponse {
-  error: {
-    code: ErrorCode;
-    message: string;
-  };
-}

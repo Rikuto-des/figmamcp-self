@@ -1,0 +1,772 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>図でわかる：自作Figma MCP の何がすごいの？</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Kosugi+Maru&family=M+PLUS+Rounded+1c:wght@400;500;700;800;900&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --bg:#FFF9F0;
+  --paper:#FFFDF7;
+  --ink:#2C2A26;
+  --muted:#7A736B;
+  --line:#E8E0D2;
+  --yellow:#FFD93D;
+  --red:#FF6B6B;
+  --green:#52D67A;
+  --blue:#4DABF7;
+  --orange:#FFA94D;
+  --purple:#C084FC;
+  --pink:#FF8FAB;
+  --font:'M PLUS Rounded 1c', system-ui, sans-serif;
+  --font-cute:'Kosugi Maru', sans-serif;
+}
+html,body{
+  background:var(--bg); color:var(--ink);
+  font-family:var(--font);
+  font-weight:500;
+  line-height:1.7;
+  -webkit-font-smoothing:antialiased;
+}
+body{
+  background-image:
+    radial-gradient(circle at 15% 12%, rgba(255,217,61,.18), transparent 30%),
+    radial-gradient(circle at 85% 88%, rgba(82,214,122,.14), transparent 30%);
+  background-attachment:fixed;
+  min-height:100vh;
+  padding-bottom:100px;
+}
+
+/* ── Layout ──────────────────────────────────────── */
+.wrap{
+  max-width:1100px;
+  margin:0 auto;
+  padding:48px 32px;
+}
+
+/* ── Hero ────────────────────────────────────────── */
+.hero{
+  text-align:center;
+  padding:32px 0 60px;
+  position:relative;
+}
+.hero .badge{
+  display:inline-block;
+  background:var(--ink); color:var(--paper);
+  padding:8px 18px;
+  border-radius:999px;
+  font-size:14px;
+  font-weight:700;
+  margin-bottom:20px;
+  letter-spacing:1px;
+}
+.hero h1{
+  font-family:var(--font-cute);
+  font-size:48px;
+  line-height:1.4;
+  margin-bottom:20px;
+  color:var(--ink);
+}
+.hero h1 .h{
+  background:linear-gradient(transparent 60%, var(--yellow) 60%);
+}
+.hero .lead{
+  font-size:20px;
+  color:var(--muted);
+  max-width:680px;
+  margin:0 auto;
+}
+.hero .deco{
+  font-size:60px;
+  margin-top:16px;
+}
+
+/* ── Section ─────────────────────────────────────── */
+section{
+  margin:80px 0;
+  background:var(--paper);
+  border:3px solid var(--ink);
+  border-radius:24px;
+  padding:48px 56px;
+  box-shadow:8px 8px 0 var(--ink);
+  position:relative;
+}
+section.no-card{
+  background:transparent;
+  border:none;
+  box-shadow:none;
+  padding:0;
+}
+section .section-num{
+  position:absolute;
+  top:-26px; left:-26px;
+  background:var(--ink);
+  color:var(--paper);
+  width:56px; height:56px;
+  border-radius:50%;
+  display:flex; align-items:center; justify-content:center;
+  font-family:var(--font-cute);
+  font-size:24px;
+  font-weight:700;
+  border:4px solid var(--paper);
+}
+section h2{
+  font-family:var(--font-cute);
+  font-size:32px;
+  margin-bottom:8px;
+  display:flex; align-items:center; gap:14px;
+}
+section h2 .em{
+  font-size:36px;
+}
+section .sub{
+  color:var(--muted);
+  font-size:16px;
+  margin-bottom:32px;
+}
+
+/* ── Character cards ────────────────────────────── */
+.chars{
+  display:grid;
+  grid-template-columns:repeat(3, 1fr);
+  gap:20px;
+  margin-top:8px;
+}
+.char{
+  background:var(--bg);
+  border:2px solid var(--ink);
+  border-radius:18px;
+  padding:24px 20px;
+  text-align:center;
+  box-shadow:4px 4px 0 var(--ink);
+  transition:transform .2s;
+}
+.char:hover{transform:translate(-2px,-2px); box-shadow:6px 6px 0 var(--ink)}
+.char .icon{
+  font-size:56px;
+  margin-bottom:8px;
+  display:inline-block;
+  filter:drop-shadow(2px 3px 0 rgba(0,0,0,.08));
+}
+.char .name{
+  font-family:var(--font-cute);
+  font-size:20px;
+  font-weight:700;
+  margin-bottom:6px;
+}
+.char .name .en{
+  display:block;
+  font-family:var(--font);
+  font-size:11px;
+  color:var(--muted);
+  margin-top:2px;
+  letter-spacing:1px;
+  text-transform:uppercase;
+}
+.char .role{
+  font-size:14px;
+  color:var(--muted);
+  line-height:1.6;
+}
+.char.danger{background:#FFEDE9; border-color:var(--red)}
+.char.safe{background:#E7F9EC; border-color:var(--green)}
+
+/* ── Story (the dream) ───────────────────────────── */
+.dream{
+  display:grid;
+  grid-template-columns:1fr 80px 1fr;
+  gap:24px;
+  align-items:center;
+  margin:24px 0;
+}
+.dream-card{
+  background:var(--bg);
+  border:2px dashed var(--muted);
+  border-radius:16px;
+  padding:24px;
+  text-align:center;
+}
+.dream-card .ic{font-size:48px; display:block; margin-bottom:8px}
+.dream-card .lbl{font-size:15px; color:var(--muted); margin-bottom:4px}
+.dream-card .txt{font-size:17px; font-weight:700}
+.dream-arrow{
+  font-size:36px;
+  text-align:center;
+  color:var(--ink);
+}
+
+/* ── Flow diagram ──────────────────────────────── */
+.flow-title{
+  display:inline-block;
+  padding:8px 20px;
+  border-radius:999px;
+  font-family:var(--font-cute);
+  font-size:18px;
+  font-weight:700;
+  margin-bottom:24px;
+}
+.flow-title.bad{ background:#FFEDE9; color:var(--red); border:2px solid var(--red)}
+.flow-title.good{ background:#E7F9EC; color:var(--green); border:2px solid var(--green)}
+
+.flow{
+  display:flex;
+  flex-direction:column;
+  gap:14px;
+}
+.step{
+  display:grid;
+  grid-template-columns:60px 1fr;
+  gap:20px;
+  align-items:start;
+  position:relative;
+}
+.step .num{
+  background:var(--ink);
+  color:var(--paper);
+  width:48px; height:48px;
+  border-radius:50%;
+  display:flex; align-items:center; justify-content:center;
+  font-family:var(--font-cute);
+  font-size:20px;
+  font-weight:700;
+  flex-shrink:0;
+}
+.step.danger .num{background:var(--red)}
+.step.safe .num{background:var(--green)}
+.step .body{
+  background:var(--bg);
+  border:2px solid var(--ink);
+  border-radius:14px;
+  padding:18px 22px;
+  flex:1;
+}
+.step.danger .body{
+  background:#FFEDE9;
+  border-color:var(--red);
+  border-width:3px;
+}
+.step.safe .body{
+  background:#E7F9EC;
+  border-color:var(--green);
+  border-width:3px;
+}
+.step .body .who{
+  display:flex; align-items:center; gap:12px;
+  margin-bottom:8px;
+}
+.step .body .who .ic{font-size:28px}
+.step .body .who .name{
+  font-weight:700;
+  font-size:17px;
+}
+.step .body .what{
+  font-size:16px;
+  color:var(--ink);
+  line-height:1.65;
+}
+.step .body .what em{
+  font-style:normal;
+  background:linear-gradient(transparent 55%, var(--yellow) 55%);
+  padding:0 2px;
+}
+.step.danger .body .what em{
+  background:linear-gradient(transparent 55%, #FFD0CC 55%);
+  color:#C92020;
+  font-weight:700;
+}
+.step.safe .body .what em{
+  background:linear-gradient(transparent 55%, #B8F0C8 55%);
+  color:#218838;
+  font-weight:700;
+}
+.step .body .why{
+  margin-top:10px;
+  padding:10px 14px;
+  background:rgba(255,255,255,.6);
+  border-radius:8px;
+  font-size:13px;
+  color:var(--muted);
+  border-left:3px solid currentColor;
+}
+.step.danger .body .why{color:var(--red)}
+.step.safe .body .why{color:var(--green)}
+
+/* Connector line between steps */
+.step::before{
+  content:'';
+  position:absolute;
+  left:23px; top:52px; bottom:-14px;
+  width:2px;
+  background:var(--line);
+}
+.step:last-child::before{display:none}
+
+/* ── Big warning callout ──────────────────────── */
+.warning-big{
+  background:#FFEDE9;
+  border:3px solid var(--red);
+  border-radius:18px;
+  padding:24px 28px;
+  margin:24px 0;
+  display:flex; gap:18px; align-items:center;
+  box-shadow:4px 4px 0 var(--red);
+}
+.warning-big .alert{font-size:40px}
+.warning-big .msg{
+  font-family:var(--font-cute);
+  font-size:20px;
+  font-weight:700;
+  color:#A8201A;
+  line-height:1.5;
+}
+.warning-big .msg .small{
+  display:block;
+  font-family:var(--font);
+  font-size:14px;
+  font-weight:500;
+  color:#8B3530;
+  margin-top:6px;
+}
+.win-big{
+  background:#E7F9EC;
+  border:3px solid var(--green);
+  border-radius:18px;
+  padding:24px 28px;
+  margin:24px 0;
+  display:flex; gap:18px; align-items:center;
+  box-shadow:4px 4px 0 var(--green);
+}
+.win-big .alert{font-size:40px}
+.win-big .msg{
+  font-family:var(--font-cute);
+  font-size:20px;
+  font-weight:700;
+  color:#1F7335;
+  line-height:1.5;
+}
+.win-big .msg .small{
+  display:block;
+  font-family:var(--font);
+  font-size:14px;
+  font-weight:500;
+  color:#2F8745;
+  margin-top:6px;
+}
+
+/* ── Comparison table ─────────────────────────── */
+.compare{
+  display:grid;
+  grid-template-columns:200px 1fr 1fr;
+  gap:0;
+  border:3px solid var(--ink);
+  border-radius:16px;
+  overflow:hidden;
+  margin-top:8px;
+}
+.compare > div{
+  padding:18px 20px;
+  border-bottom:2px solid var(--ink);
+}
+.compare > div:nth-last-child(-n+3){border-bottom:none}
+.compare .row-h{
+  background:var(--ink);
+  color:var(--paper);
+  font-family:var(--font-cute);
+  font-size:15px;
+}
+.compare .col-h{
+  background:var(--bg);
+  font-family:var(--font-cute);
+  font-weight:700;
+  border-right:2px solid var(--ink);
+  display:flex; align-items:center;
+}
+.compare .col-bad{
+  background:#FFF5F3;
+  border-right:2px solid var(--ink);
+  font-size:15px;
+}
+.compare .col-good{
+  background:#F0FAF3;
+  font-size:15px;
+  font-weight:700;
+}
+.compare .col-bad .tag, .compare .col-good .tag{
+  display:inline-block;
+  padding:3px 10px;
+  border-radius:999px;
+  font-size:11px;
+  font-weight:700;
+  margin-right:8px;
+  letter-spacing:.5px;
+}
+.compare .col-bad .tag{background:var(--red); color:white}
+.compare .col-good .tag{background:var(--green); color:white}
+
+/* ── Final summary ───────────────────────────── */
+.summary{
+  background:var(--ink);
+  color:var(--paper);
+  border-radius:24px;
+  padding:48px 56px;
+  text-align:center;
+  margin-top:80px;
+}
+.summary h2{
+  font-family:var(--font-cute);
+  font-size:36px;
+  margin-bottom:24px;
+  color:var(--yellow);
+}
+.summary .big{
+  font-size:24px;
+  line-height:1.7;
+  font-weight:700;
+}
+.summary .big em{
+  font-style:normal;
+  color:var(--yellow);
+  background:none;
+}
+.summary .meta{
+  margin-top:32px;
+  font-size:13px;
+  color:#8E867C;
+  letter-spacing:1px;
+}
+
+/* ── Footer ─────────────────────────────────── */
+footer{
+  text-align:center;
+  margin-top:60px;
+  font-size:12px;
+  color:var(--muted);
+  letter-spacing:1px;
+}
+
+/* ── Responsive ─────────────────────────────── */
+@media (max-width:760px){
+  .wrap{padding:24px 16px}
+  .hero h1{font-size:32px}
+  section{padding:32px 24px}
+  section .section-num{width:44px; height:44px; font-size:18px; top:-22px; left:-12px}
+  .chars{grid-template-columns:1fr 1fr; gap:14px}
+  .dream{grid-template-columns:1fr; gap:12px}
+  .dream-arrow{transform:rotate(90deg)}
+  .compare{grid-template-columns:1fr}
+  .compare > div{border-right:none !important; border-bottom:2px solid var(--ink) !important}
+  .step{grid-template-columns:40px 1fr; gap:12px}
+  .step .num{width:36px; height:36px; font-size:16px}
+}
+
+/* ── Scroll reveal ──────────────────────────── */
+.reveal{
+  opacity:0;
+  transform:translateY(20px);
+  transition:opacity .6s ease, transform .6s ease;
+}
+.reveal.visible{
+  opacity:1;
+  transform:translateY(0);
+}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       HERO
+  ═════════════════════════════════════════════════════════════════ -->
+  <div class="hero">
+    <span class="badge">図でわかる解説</span>
+    <h1>
+      AIに「<span class="h">この絵をホームページにして！</span>」<br>
+      ってお願いする話
+    </h1>
+    <p class="lead">
+      ふつうにやると問題があったので、<br>
+      自分たちで安全な仕組みを作りました。何がどう違うのか、ぜんぶ図で説明します。
+    </p>
+    <div class="deco">🎨 ➡️ 🤖 ➡️ 💻</div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       SECTION 1 — そもそも何がしたい？
+  ═════════════════════════════════════════════════════════════════ -->
+  <section class="reveal">
+    <div class="section-num">1</div>
+    <h2><span class="em">💭</span> そもそも、何がしたかったの？</h2>
+    <p class="sub">最初に「やりたかったこと」をハッキリさせます。</p>
+
+    <div class="dream">
+      <div class="dream-card">
+        <span class="ic">🎨</span>
+        <div class="lbl">用意するもの</div>
+        <div class="txt">Figmaで描いた<br>ホームページの設計図</div>
+      </div>
+      <div class="dream-arrow">➡️</div>
+      <div class="dream-card" style="border-color:var(--green); background:#F0FAF3">
+        <span class="ic">💻</span>
+        <div class="lbl">ほしい結果</div>
+        <div class="txt">AIが書いてくれた<br>動くホームページのコード</div>
+      </div>
+    </div>
+
+    <p style="margin-top:20px; font-size:16px; color:var(--muted)">
+      「絵」を見せれば AI がそれをコードにしてくれたら超ラク。
+      でもAIは絵を直接見ることができないので、<strong style="color:var(--ink)">誰かが絵を AI に渡してあげる必要</strong>がある。
+      その「渡し役」のことを <strong style="color:var(--ink)">MCP（Model Context Protocol）</strong> といいます。
+    </p>
+  </section>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       SECTION 2 — 登場人物
+  ═════════════════════════════════════════════════════════════════ -->
+  <section class="reveal">
+    <div class="section-num">2</div>
+    <h2><span class="em">👥</span> 登場人物（覚えるのはこの6人）</h2>
+    <p class="sub">アーキテクチャを理解する前に、まずは「誰がいるか」を整理。</p>
+
+    <div class="chars">
+      <div class="char">
+        <span class="icon">🎨</span>
+        <div class="name">Figma <span class="en">figma</span></div>
+        <div class="role">デザインを描くお絵かきアプリ。<br>ここに「設計図」がある。</div>
+      </div>
+      <div class="char">
+        <span class="icon">🤖</span>
+        <div class="name">AI（Copilot）<span class="en">copilot</span></div>
+        <div class="role">頼んだことをコードにしてくれる<br>賢いお助けロボット。</div>
+      </div>
+      <div class="char">
+        <span class="icon">📮</span>
+        <div class="name">MCP <span class="en">middleman</span></div>
+        <div class="role">AI とアプリの間で「絵を取ってきて〜」を<br>仲介する郵便屋さん。</div>
+      </div>
+      <div class="char danger">
+        <span class="icon">📦</span>
+        <div class="name">公開ロッカー <span class="en">aws s3 (public)</span></div>
+        <div class="role">インターネット上の<strong style="color:var(--red)">誰でも開けられる</strong>物置。<br>カギなし。</div>
+      </div>
+      <div class="char safe">
+        <span class="icon">🎭</span>
+        <div class="name">ロボット撮影係 <span class="en">playwright</span></div>
+        <div class="role">代わりにブラウザを開いて<br>スクリーンショットを撮る道具。</div>
+      </div>
+      <div class="char safe">
+        <span class="icon">💻</span>
+        <div class="name">自分の作業部屋 <span class="en">codespaces</span></div>
+        <div class="role">GitHub が用意してくれる<br><strong style="color:var(--green)">自分専用の開発環境</strong>。<br>ここで全部が動く。</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       SECTION 3 — BEFORE
+  ═════════════════════════════════════════════════════════════════ -->
+  <section class="reveal">
+    <div class="section-num">3</div>
+    <h2><span class="em">⚠️</span> Figma が用意してる「公式」のやり方</h2>
+    <p class="sub">普通に使うとこうなる。でもこれだと困る理由があります。</p>
+
+    <span class="flow-title bad">⚠ いまのデフォルト：公式 MCP の流れ</span>
+
+    <div class="flow">
+
+      <div class="step danger">
+        <div class="num">1</div>
+        <div class="body">
+          <div class="who"><span class="ic">🤖</span><span class="name">AI（Copilot）</span></div>
+          <div class="what">「この Figma の絵をコードにして〜」と頼まれる。<br>絵を取ってくる必要があるので、<em>郵便屋さん（公式 MCP）</em>に「絵ちょうだい」と頼む。</div>
+        </div>
+      </div>
+
+      <div class="step danger">
+        <div class="num">2</div>
+        <div class="body">
+          <div class="who"><span class="ic">📮</span><span class="name">公式 MCP（郵便屋さん）</span></div>
+          <div class="what">Figma に「あの絵を画像にして！」と注文する。</div>
+        </div>
+      </div>
+
+      <div class="step danger">
+        <div class="num">3</div>
+        <div class="body">
+          <div class="who"><span class="ic">🎨</span><span class="name">Figma</span></div>
+          <div class="what">絵を画像（PNG）に変換する。<br>そして…… <em>変換した画像を「公開ロッカー」に置いてしまう。</em></div>
+          <div class="why">⚠ Figma の仕組み的に、この処理はインターネット上の公開された AWS S3 バケットに保存される</div>
+        </div>
+      </div>
+
+      <div class="step danger">
+        <div class="num">4</div>
+        <div class="body">
+          <div class="who"><span class="ic">📦</span><span class="name">公開ロッカー（AWS S3）</span></div>
+          <div class="what">「ロッカー番号（URL）はこれです」と教えてくれる。<br><em>でもこのロッカー、カギがないので誰でも開けられる。</em></div>
+        </div>
+      </div>
+
+      <div class="step danger">
+        <div class="num">5</div>
+        <div class="body">
+          <div class="who"><span class="ic">🤖</span><span class="name">AI（Copilot）</span></div>
+          <div class="what">そのロッカー番号（URL）を使って画像を見て、コードを書いてくれる。<br>めでたしめでたし……<em>と思いきや。</em></div>
+        </div>
+      </div>
+
+    </div>
+
+    <div class="warning-big">
+      <span class="alert">😱</span>
+      <div class="msg">
+        会社の秘密のデザインが、ネット上の「カギなしロッカー」に置かれてしまう！
+        <span class="small">URL を知っている人なら誰でも見られる状態。会社のルール的にアウト。だから会社では使えない。</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       SECTION 4 — AFTER
+  ═════════════════════════════════════════════════════════════════ -->
+  <section class="reveal">
+    <div class="section-num">4</div>
+    <h2><span class="em">✨</span> 自分たちで作った「自作」のやり方</h2>
+    <p class="sub">外部のロッカーもサーバーも一切使わず、<strong>全部「自分の作業部屋（Codespaces）」の中で完結</strong>させました。</p>
+
+    <span class="flow-title good">✓ 自作 MCP の流れ（全部 Codespaces 内）</span>
+
+    <div class="flow">
+
+      <div class="step safe">
+        <div class="num">1</div>
+        <div class="body">
+          <div class="who"><span class="ic">🤖</span><span class="name">AI（Copilot）</span></div>
+          <div class="what">「この絵をコードにして〜」と頼まれる。<br>同じ作業部屋にいる<em>自作 MCP</em>に「絵ちょうだい」と頼む。</div>
+          <div class="why">✓ ネット越しじゃない。同じ Codespace の中だけで会話している</div>
+        </div>
+      </div>
+
+      <div class="step safe">
+        <div class="num">2</div>
+        <div class="body">
+          <div class="who"><span class="ic">📮</span><span class="name">自作 MCP</span></div>
+          <div class="what">Figma の API（公開ロッカーに置く仕組み）は<em>使わない。</em><br>かわりに、ロボット撮影係を呼ぶ。</div>
+        </div>
+      </div>
+
+      <div class="step safe">
+        <div class="num">3</div>
+        <div class="body">
+          <div class="who"><span class="ic">🎭</span><span class="name">ロボット撮影係（Playwright）</span></div>
+          <div class="what">普通の人と同じように Figma をブラウザで開いて、<em>自分でスクリーンショットを撮る。</em></div>
+          <div class="why">✓ 画像はそのまま作業部屋（Codespaces）のメモリの中にいる</div>
+        </div>
+      </div>
+
+      <div class="step safe">
+        <div class="num">4</div>
+        <div class="body">
+          <div class="who"><span class="ic">📮</span><span class="name">自作 MCP</span></div>
+          <div class="what">画像を AI に渡すときは、<em>URL じゃなくて画像そのもの</em>を直接渡す。<br>（base64 という形式で、画像のデータをまるごと送る）</div>
+          <div class="why">✓ そもそも公開できる URL を一切作らない</div>
+        </div>
+      </div>
+
+      <div class="step safe">
+        <div class="num">5</div>
+        <div class="body">
+          <div class="who"><span class="ic">🤖</span><span class="name">AI（Copilot）</span></div>
+          <div class="what">渡された画像を見てコードを書いてくれる。<br>めでたしめでたし、<em>今度は本当に。</em></div>
+        </div>
+      </div>
+
+    </div>
+
+    <div class="win-big">
+      <span class="alert">🎉</span>
+      <div class="msg">
+        画像が Codespaces の外を一切出ない！外部のロッカーもサーバーも経由しない。
+        <span class="small">そもそも外向きの URL を作らないので、漏れる先がない。社内ルール的にも OK。</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       SECTION 5 — 比較表
+  ═════════════════════════════════════════════════════════════════ -->
+  <section class="reveal">
+    <div class="section-num">5</div>
+    <h2><span class="em">⚖️</span> ざっくり言うと、ここが違う</h2>
+    <p class="sub">2つを並べてみると違いがハッキリ見えます。</p>
+
+    <div class="compare">
+      <div class="row-h"></div>
+      <div class="row-h">⚠ 公式 MCP</div>
+      <div class="row-h">✓ 自作 MCP</div>
+
+      <div class="col-h">画像はどうやって<br>取ってくる？</div>
+      <div class="col-bad"><span class="tag">問題</span>Figma の API に「画像にして」と頼む</div>
+      <div class="col-good"><span class="tag">OK</span>ロボットがブラウザで開いて自分で撮る</div>
+
+      <div class="col-h">画像はどこを<br>通る？</div>
+      <div class="col-bad"><span class="tag">問題</span>ネット上の誰でも見える公開ロッカー</div>
+      <div class="col-good"><span class="tag">OK</span>自分の作業部屋（Codespaces）の中だけ</div>
+
+      <div class="col-h">画像を AI に<br>渡す方法は？</div>
+      <div class="col-bad"><span class="tag">問題</span>ロッカーの URL を渡す（URL知れば誰でも見れる）</div>
+      <div class="col-good"><span class="tag">OK</span>画像データをそのまま渡す（URL すら作らない）</div>
+
+      <div class="col-h">他人に見られる<br>リスクは？</div>
+      <div class="col-bad"><span class="tag">問題</span>あり。URL がバレたらアウト</div>
+      <div class="col-good"><span class="tag">OK</span>なし。そもそも外に出ない</div>
+
+      <div class="col-h">外部サービスは<br>いくつ必要？</div>
+      <div class="col-bad"><span class="tag">問題</span>Figma + AWS S3 + AI</div>
+      <div class="col-good"><span class="tag">OK</span>Figma + AI だけ。あとは Codespaces 内で完結</div>
+
+      <div class="col-h">会社で使える？</div>
+      <div class="col-bad"><span class="tag">問題</span>使えない（社内ルール違反）</div>
+      <div class="col-good"><span class="tag">OK</span>使える</div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       SECTION 6 — 一言でいうと
+  ═════════════════════════════════════════════════════════════════ -->
+  <div class="summary reveal">
+    <h2>一言でいうと</h2>
+    <p class="big">
+      公式は「<em>みんなが使う公開ロッカー</em>」に画像を置いてしまう。<br><br>
+      自作は「<em>自分の作業部屋（Codespaces）</em>」の中だけで全部終わらせて、<br>
+      AI には画像を直接手渡しする。<br><br>
+      <span style="font-size:18px; color:#FFD93D">だから外に何も出ない。だから会社でも使える。</span>
+    </p>
+    <div class="meta">FIGMA-MCP-POC · 図でわかる解説</div>
+  </div>
+
+  <footer>
+    🎨 Made with care · For everyone curious about how this works
+  </footer>
+
+</div>
+
+<script>
+// Scroll reveal
+const io = new IntersectionObserver((entries) => {
+  for (const e of entries) {
+    if (e.isIntersecting) {
+      e.target.classList.add('visible');
+      io.unobserve(e.target);
+    }
+  }
+}, { threshold: 0.12 });
+document.querySelectorAll('.reveal').forEach(el => io.observe(el));
+</script>
+
+</body>
+</html>

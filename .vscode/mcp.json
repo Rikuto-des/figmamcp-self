@@ -1,19 +1,14 @@
 {
   "$schema": "https://aka.ms/vscode-mcp-schema",
-  "inputs": [
-    {
-      "id": "figma-mcp-token",
-      "type": "promptString",
-      "description": "Figma MCP Token (fmps_...)",
-      "password": true
-    }
-  ],
   "servers": {
-    "figma-internal": {
-      "type": "http",
-      "url": "http://localhost:3000/mcp",
-      "headers": {
-        "Authorization": "Bearer ${input:figma-mcp-token}"
+    "figma-mcp": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["${workspaceFolder}/packages/figma-mcp/dist/server.js"],
+      "env": {
+        "FIGMA_STATE_PATH": "${workspaceFolder}/packages/figma-mcp/.playwright-state/figma.json",
+        "FIGMA_PROFILE_DIR": "${workspaceFolder}/packages/figma-mcp/.playwright-state/chrome-profile",
+        "LOG_LEVEL": "info"
       }
     }
   }
